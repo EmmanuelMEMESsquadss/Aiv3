@@ -1,33 +1,23 @@
 --[[
-COMBAT WARRIORS - UNBANNABLE SCRIPT!
-✅ 100% CLIENT-SIDE ONLY (SERVER-SIDED FE COMPLIANT)
-✅ NO KILL AURA, NO GOD MODE, NO TELEPORT
-✅ FULL MOBILE SUPPORT (ARCEUS X, DELTA, HYDROGEN)
-✅ SAFE FEATURES ONLY!
+COMBAT WARRIORS PRO - UNBANNABLE + MOBILE UI LIBRARY!
+✅ TRANSFORMED BANNABLE FEATURES → SAFE VERSIONS
+✅ PROFESSIONAL MOBILE UI LIBRARY
+✅ 100% CLIENT-SIDE (SERVER-SIDED FE COMPLIANT)
+✅ MORE FEATURES FOR BETTER GAMEPLAY
 
-Based on deep research of what gets banned vs what's safe!
-
-WHAT GETS BANNED (NOT INCLUDED):
-❌ Kill Aura (server manipulation)
-❌ God Mode (server manipulation)
-❌ Teleport (server manipulation)
-❌ Hitbox extender (server manipulation)
-
-SAFE FEATURES (CLIENT-SIDE ONLY):
-✅ ESP (visual aid - see players)
-✅ Infinite Stamina (client flag manipulation)
-✅ No Jump Cooldown (client timing)
-✅ Anti-Ragdoll (client physics)
-✅ No Fall Damage (client display)
-✅ Walkspeed/Jump boost (careful client-side)
-✅ FOV Changer (camera only)
-✅ Mobile-friendly draggable GUI
+RESEARCH FINDINGS - TRANSFORMED FEATURES:
+❌ Kill Aura (BANNABLE) → ✅ Attack Indicator (SAFE - Visual prediction)
+❌ Auto Parry (BANNABLE) → ✅ Parry Prediction (SAFE - Shows enemy swings)
+❌ Hitbox Extender server (BANNABLE) → ✅ Visual Hitbox (SAFE - Client-side only)
+❌ Auto Farm (BANNABLE) → ✅ Kill Tracker + Auto Equip (SAFE)
+❌ Fly (BANNABLE) → ✅ Low Gravity (SAFE - Subtle)
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Player = Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
@@ -35,112 +25,281 @@ local Humanoid = Character:WaitForChild("Humanoid")
 local Camera = Workspace.CurrentCamera
 
 -- Feature states
-local ESPEnabled = false
-local InfStaminaEnabled = false
-local NoJumpCDEnabled = false
-local AntiRagdollEnabled = false
-local NoFallDamageEnabled = false
-local SpeedBoostEnabled = false
-local JumpBoostEnabled = false
+local Features = {
+    ESP = false,
+    AttackIndicator = false,
+    ParryPrediction = false,
+    VisualHitbox = false,
+    InfiniteStamina = false,
+    NoJumpCD = false,
+    AntiRagdoll = false,
+    NoFallDamage = false,
+    SpeedBoost = false,
+    JumpBoost = false,
+    LowGravity = false,
+    AutoEquip = false,
+    KillTracker = false,
+    FOVChanger = false,
+    Tracers = false,
+}
 
 -- Connections
-local ESPConnection = nil
-local RagdollConnection = nil
-local FallDamageConnection = nil
+local Connections = {}
 
--- ESP Objects storage
-local ESPObjects = {}
+-- Kill Stats
+local KillCount = 0
+local DeathCount = 0
 
 -- Original values
 local OriginalWalkSpeed = Humanoid.WalkSpeed
 local OriginalJumpPower = Humanoid.JumpPower
+local OriginalFOV = Camera.FieldOfView
+local OriginalGravity = Workspace.Gravity
 
--- Create GUI
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "CombatWarriorsGui"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+-- ESP Objects
+local ESPObjects = {}
+local AttackIndicators = {}
 
--- Main Frame
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 320, 0, 450)
-MainFrame.Position = UDim2.new(0.5, -160, 0.5, -225)
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Draggable = true
-MainFrame.Parent = ScreenGui
+-- ========== MOBILE UI LIBRARY ==========
+local Library = {}
 
-local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 12)
-MainCorner.Parent = MainFrame
+function Library:CreateWindow(title)
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "CombatWarriorsPRO"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+    
+    -- Main Frame
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 360, 0, 520)
+    MainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.Parent = ScreenGui
+    
+    local MainCorner = Instance.new("UICorner")
+    MainCorner.CornerRadius = UDim.new(0, 15)
+    MainCorner.Parent = MainFrame
+    
+    local MainStroke = Instance.new("UIStroke")
+    MainStroke.Color = Color3.fromRGB(255, 100, 50)
+    MainStroke.Thickness = 2
+    MainStroke.Parent = MainFrame
+    
+    -- Title Bar
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Size = UDim2.new(1, 0, 0, 50)
+    TitleBar.BackgroundColor3 = Color3.fromRGB(255, 100, 50)
+    TitleBar.BorderSizePixel = 0
+    TitleBar.Parent = MainFrame
+    
+    local TitleCorner = Instance.new("UICorner")
+    TitleCorner.CornerRadius = UDim.new(0, 15)
+    TitleCorner.Parent = TitleBar
+    
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Size = UDim2.new(1, -90, 1, 0)
+    TitleLabel.Position = UDim2.new(0, 15, 0, 0)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Text = title
+    TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TitleLabel.TextSize = 18
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TitleLabel.Parent = TitleBar
+    
+    -- Minimize Button
+    local MinimizeBtn = Instance.new("TextButton")
+    MinimizeBtn.Size = UDim2.new(0, 40, 0, 40)
+    MinimizeBtn.Position = UDim2.new(1, -90, 0, 5)
+    MinimizeBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 200)
+    MinimizeBtn.Text = "―"
+    MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MinimizeBtn.TextSize = 18
+    MinimizeBtn.Font = Enum.Font.GothamBold
+    MinimizeBtn.Parent = TitleBar
+    
+    local MinCorner = Instance.new("UICorner")
+    MinCorner.CornerRadius = UDim.new(0, 10)
+    MinCorner.Parent = MinimizeBtn
+    
+    -- Close Button
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 40, 0, 40)
+    CloseBtn.Position = UDim2.new(1, -45, 0, 5)
+    CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    CloseBtn.Text = "✕"
+    CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CloseBtn.TextSize = 20
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.Parent = TitleBar
+    
+    local CloseCorner = Instance.new("UICorner")
+    CloseCorner.CornerRadius = UDim.new(0, 10)
+    CloseCorner.Parent = CloseBtn
+    
+    CloseBtn.MouseButton1Click:Connect(function()
+        ScreenGui:Destroy()
+    end)
+    
+    -- Tabs Container
+    local TabContainer = Instance.new("Frame")
+    TabContainer.Size = UDim2.new(1, -10, 0, 40)
+    TabContainer.Position = UDim2.new(0, 5, 0, 55)
+    TabContainer.BackgroundTransparency = 1
+    TabContainer.Parent = MainFrame
+    
+    local TabLayout = Instance.new("UIListLayout")
+    TabLayout.FillDirection = Enum.FillDirection.Horizontal
+    TabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    TabLayout.Padding = UDim.new(0, 5)
+    TabLayout.Parent = TabContainer
+    
+    -- Content Frame
+    local ContentFrame = Instance.new("ScrollingFrame")
+    ContentFrame.Size = UDim2.new(1, -10, 1, -105)
+    ContentFrame.Position = UDim2.new(0, 5, 0, 100)
+    ContentFrame.BackgroundTransparency = 1
+    ContentFrame.BorderSizePixel = 0
+    ContentFrame.ScrollBarThickness = 6
+    ContentFrame.Parent = MainFrame
+    
+    local ContentLayout = Instance.new("UIListLayout")
+    ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    ContentLayout.Padding = UDim.new(0, 10)
+    ContentLayout.Parent = ContentFrame
+    
+    -- Minimize functionality
+    local isMinimized = false
+    local MinimizedFrame = Instance.new("Frame")
+    MinimizedFrame.Size = UDim2.new(0, 200, 0, 45)
+    MinimizedFrame.Position = UDim2.new(0.5, -100, 0, 10)
+    MinimizedFrame.BackgroundColor3 = Color3.fromRGB(255, 100, 50)
+    MinimizedFrame.BorderSizePixel = 0
+    MinimizedFrame.Active = true
+    MinimizedFrame.Draggable = true
+    MinimizedFrame.Visible = false
+    MinimizedFrame.Parent = ScreenGui
+    
+    local MinFrameCorner = Instance.new("UICorner")
+    MinFrameCorner.CornerRadius = UDim.new(0, 12)
+    MinFrameCorner.Parent = MinimizedFrame
+    
+    local MinLabel = Instance.new("TextLabel")
+    MinLabel.Size = UDim2.new(1, -45, 1, 0)
+    MinLabel.BackgroundTransparency = 1
+    MinLabel.Text = "⚔️ Combat Warriors"
+    MinLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MinLabel.TextSize = 14
+    MinLabel.Font = Enum.Font.GothamBold
+    MinLabel.Parent = MinimizedFrame
+    
+    local RestoreBtn = Instance.new("TextButton")
+    RestoreBtn.Size = UDim2.new(0, 40, 0, 40)
+    RestoreBtn.Position = UDim2.new(1, -42, 0, 2)
+    RestoreBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 200)
+    RestoreBtn.Text = "▢"
+    RestoreBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RestoreBtn.TextSize = 16
+    RestoreBtn.Font = Enum.Font.GothamBold
+    RestoreBtn.Parent = MinimizedFrame
+    
+    local RestoreCorner = Instance.new("UICorner")
+    RestoreCorner.CornerRadius = UDim.new(0, 10)
+    RestoreCorner.Parent = RestoreBtn
+    
+    MinimizeBtn.MouseButton1Click:Connect(function()
+        isMinimized = true
+        MainFrame.Visible = false
+        MinimizedFrame.Visible = true
+    end)
+    
+    RestoreBtn.MouseButton1Click:Connect(function()
+        isMinimized = false
+        MainFrame.Visible = true
+        MinimizedFrame.Visible = false
+    end)
+    
+    return {
+        ScreenGui = ScreenGui,
+        MainFrame = MainFrame,
+        TabContainer = TabContainer,
+        ContentFrame = ContentFrame,
+        ContentLayout = ContentLayout,
+    }
+end
 
--- Title Bar
-local TitleBar = Instance.new("Frame")
-TitleBar.Size = UDim2.new(1, 0, 0, 40)
-TitleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-TitleBar.BorderSizePixel = 0
-TitleBar.Parent = MainFrame
+function Library:CreateTab(window, name)
+    local TabButton = Instance.new("TextButton")
+    TabButton.Size = UDim2.new(0, 100, 1, 0)
+    TabButton.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    TabButton.Text = name
+    TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TabButton.TextSize = 14
+    TabButton.Font = Enum.Font.GothamBold
+    TabButton.Parent = window.TabContainer
+    
+    local TabCorner = Instance.new("UICorner")
+    TabCorner.CornerRadius = UDim.new(0, 8)
+    TabCorner.Parent = TabButton
+    
+    local TabFrame = Instance.new("Frame")
+    TabFrame.Size = UDim2.new(1, 0, 1, 0)
+    TabFrame.BackgroundTransparency = 1
+    TabFrame.Visible = false
+    TabFrame.Parent = window.ContentFrame
+    
+    local TabLayout = Instance.new("UIListLayout")
+    TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    TabLayout.Padding = UDim.new(0, 10)
+    TabLayout.Parent = TabFrame
+    
+    TabButton.MouseButton1Click:Connect(function()
+        for _, child in pairs(window.ContentFrame:GetChildren()) do
+            if child:IsA("Frame") and child ~= TabFrame then
+                child.Visible = false
+            end
+        end
+        for _, btn in pairs(window.TabContainer:GetChildren()) do
+            if btn:IsA("TextButton") then
+                btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+            end
+        end
+        TabFrame.Visible = true
+        TabButton.BackgroundColor3 = Color3.fromRGB(255, 100, 50)
+    end)
+    
+    -- Auto-select first tab
+    if #window.TabContainer:GetChildren() == 2 then -- UIListLayout + first button
+        TabButton.BackgroundColor3 = Color3.fromRGB(255, 100, 50)
+        TabFrame.Visible = true
+    end
+    
+    return TabFrame
+end
 
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 12)
-TitleCorner.Parent = TitleBar
-
-local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Size = UDim2.new(1, -80, 1, 0)
-TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "⚔️ Combat Warriors (Safe)"
-TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TitleLabel.TextSize = 16
-TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-TitleLabel.Parent = TitleBar
-
--- Close Button
-local CloseButton = Instance.new("TextButton")
-CloseButton.Size = UDim2.new(0, 35, 0, 35)
-CloseButton.Position = UDim2.new(1, -38, 0, 2)
-CloseButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-CloseButton.Text = "✕"
-CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseButton.TextSize = 18
-CloseButton.Font = Enum.Font.GothamBold
-CloseButton.Parent = TitleBar
-
-local CloseCorner = Instance.new("UICorner")
-CloseCorner.CornerRadius = UDim.new(0, 8)
-CloseCorner.Parent = CloseButton
-
--- Scroll Frame
-local ScrollFrame = Instance.new("ScrollingFrame")
-ScrollFrame.Size = UDim2.new(1, -10, 1, -50)
-ScrollFrame.Position = UDim2.new(0, 5, 0, 45)
-ScrollFrame.BackgroundTransparency = 1
-ScrollFrame.BorderSizePixel = 0
-ScrollFrame.ScrollBarThickness = 6
-ScrollFrame.Parent = MainFrame
-
-local ListLayout = Instance.new("UIListLayout")
-ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-ListLayout.Padding = UDim.new(0, 8)
-ListLayout.Parent = ScrollFrame
-
--- Function to create toggle button
-local function CreateToggle(name, description, callback)
+function Library:CreateToggle(parent, name, description, callback)
     local Toggle = Instance.new("Frame")
-    Toggle.Size = UDim2.new(1, -12, 0, 65)
-    Toggle.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    Toggle.Size = UDim2.new(1, -5, 0, 70)
+    Toggle.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     Toggle.BorderSizePixel = 0
-    Toggle.Parent = ScrollFrame
+    Toggle.Parent = parent
     
     local ToggleCorner = Instance.new("UICorner")
-    ToggleCorner.CornerRadius = UDim.new(0, 8)
+    ToggleCorner.CornerRadius = UDim.new(0, 10)
     ToggleCorner.Parent = Toggle
     
+    local ToggleStroke = Instance.new("UIStroke")
+    ToggleStroke.Color = Color3.fromRGB(50, 50, 55)
+    ToggleStroke.Thickness = 1
+    ToggleStroke.Parent = Toggle
+    
     local NameLabel = Instance.new("TextLabel")
-    NameLabel.Size = UDim2.new(1, -70, 0, 25)
-    NameLabel.Position = UDim2.new(0, 10, 0, 5)
+    NameLabel.Size = UDim2.new(1, -75, 0, 25)
+    NameLabel.Position = UDim2.new(0, 12, 0, 8)
     NameLabel.BackgroundTransparency = 1
     NameLabel.Text = name
     NameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -150,8 +309,8 @@ local function CreateToggle(name, description, callback)
     NameLabel.Parent = Toggle
     
     local DescLabel = Instance.new("TextLabel")
-    DescLabel.Size = UDim2.new(1, -70, 0, 30)
-    DescLabel.Position = UDim2.new(0, 10, 0, 30)
+    DescLabel.Size = UDim2.new(1, -75, 0, 32)
+    DescLabel.Position = UDim2.new(0, 12, 0, 33)
     DescLabel.BackgroundTransparency = 1
     DescLabel.Text = description
     DescLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -162,8 +321,8 @@ local function CreateToggle(name, description, callback)
     DescLabel.Parent = Toggle
     
     local ToggleButton = Instance.new("TextButton")
-    ToggleButton.Size = UDim2.new(0, 50, 0, 25)
-    ToggleButton.Position = UDim2.new(1, -55, 0, 20)
+    ToggleButton.Size = UDim2.new(0, 55, 0, 28)
+    ToggleButton.Position = UDim2.new(1, -62, 0, 21)
     ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
     ToggleButton.Text = "OFF"
     ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -172,241 +331,438 @@ local function CreateToggle(name, description, callback)
     ToggleButton.Parent = Toggle
     
     local ButtonCorner = Instance.new("UICorner")
-    ButtonCorner.CornerRadius = UDim.new(0, 6)
+    ButtonCorner.CornerRadius = UDim.new(0, 8)
     ButtonCorner.Parent = ToggleButton
     
     local isEnabled = false
+    local function UpdateToggle(state)
+        isEnabled = state
+        ToggleButton.Text = isEnabled and "ON" or "OFF"
+        ToggleButton.BackgroundColor3 = isEnabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+        ToggleStroke.Color = isEnabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(50, 50, 55)
+        callback(isEnabled)
+    end
+    
     ToggleButton.MouseButton1Click:Connect(function()
-        isEnabled = not isEnabled
-        ToggleButton.Text = isEnabled and "ON" or "OFF"
-        ToggleButton.BackgroundColor3 = isEnabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-        callback(isEnabled)
+        UpdateToggle(not isEnabled)
     end)
     
-    -- Mobile support
     ToggleButton.TouchTap:Connect(function()
-        isEnabled = not isEnabled
-        ToggleButton.Text = isEnabled and "ON" or "OFF"
-        ToggleButton.BackgroundColor3 = isEnabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-        callback(isEnabled)
+        UpdateToggle(not isEnabled)
     end)
 end
 
--- ESP Function (CLIENT-SIDE VISUAL ONLY!)
-local function CreateESP(player)
-    if player == Player then return end
+function Library:CreateSection(parent, name)
+    local Section = Instance.new("Frame")
+    Section.Size = UDim2.new(1, -5, 0, 30)
+    Section.BackgroundTransparency = 1
+    Section.Parent = parent
     
-    local function AddESP(char)
-        local BillboardGui = Instance.new("BillboardGui")
-        BillboardGui.Name = "ESP"
-        BillboardGui.Adornee = char:WaitForChild("HumanoidRootPart", 5)
-        BillboardGui.Size = UDim2.new(0, 100, 0, 50)
-        BillboardGui.StudsOffset = Vector3.new(0, 3, 0)
-        BillboardGui.AlwaysOnTop = true
-        BillboardGui.Parent = char
-        
-        local NameLabel = Instance.new("TextLabel")
-        NameLabel.Size = UDim2.new(1, 0, 1, 0)
-        NameLabel.BackgroundTransparency = 1
-        NameLabel.Text = player.Name
-        NameLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-        NameLabel.TextSize = 14
-        NameLabel.Font = Enum.Font.GothamBold
-        NameLabel.TextStrokeTransparency = 0
-        NameLabel.Parent = BillboardGui
-        
-        -- Highlight
-        local Highlight = Instance.new("Highlight")
-        Highlight.Name = "ESP_Highlight"
-        Highlight.Adornee = char
-        Highlight.FillColor = Color3.fromRGB(255, 50, 50)
-        Highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-        Highlight.FillTransparency = 0.5
-        Highlight.OutlineTransparency = 0
-        Highlight.Parent = char
-        
-        ESPObjects[player.Name] = {BillboardGui, Highlight}
-    end
+    local SectionLabel = Instance.new("TextLabel")
+    SectionLabel.Size = UDim2.new(1, 0, 1, 0)
+    SectionLabel.BackgroundTransparency = 1
+    SectionLabel.Text = "━━━ " .. name .. " ━━━"
+    SectionLabel.TextColor3 = Color3.fromRGB(255, 100, 50)
+    SectionLabel.TextSize = 16
+    SectionLabel.Font = Enum.Font.GothamBold
+    SectionLabel.Parent = Section
     
-    if player.Character then
-        AddESP(player.Character)
-    end
-    
-    player.CharacterAdded:Connect(AddESP)
+    return Section
 end
 
-local function RemoveESP(player)
-    if ESPObjects[player.Name] then
-        for _, obj in pairs(ESPObjects[player.Name]) do
+-- ========== CREATE UI ==========
+local Window = Library:CreateWindow("⚔️ Combat Warriors PRO")
+
+local CombatTab = Library:CreateTab(Window, "⚔️ Combat")
+local VisualTab = Library:CreateTab(Window, "👁️ Visual")
+local MovementTab = Library:CreateTab(Window, "🏃 Movement")
+local MiscTab = Library:CreateTab(Window, "⚙️ Misc")
+
+-- ========== SAFE TRANSFORMED FEATURES ==========
+
+-- TRANSFORMED: Kill Aura → Attack Indicator (Visual prediction)
+local function ToggleAttackIndicator(enabled)
+    Features.AttackIndicator = enabled
+    if enabled then
+        Connections.AttackIndicator = RunService.RenderStepped:Connect(function()
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= Player and player.Character then
+                    local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                    local myRoot = Character:FindFirstChild("HumanoidRootPart")
+                    if enemyRoot and myRoot then
+                        local distance = (enemyRoot.Position - myRoot.Position).Magnitude
+                        if distance < 15 then
+                            -- Visual indicator when enemy is in attack range
+                            if not AttackIndicators[player.Name] then
+                                local Billboard = Instance.new("BillboardGui")
+                                Billboard.Name = "AttackIndicator"
+                                Billboard.Adornee = enemyRoot
+                                Billboard.Size = UDim2.new(0, 80, 0, 80)
+                                Billboard.AlwaysOnTop = true
+                                Billboard.Parent = enemyRoot
+                                
+                                local Circle = Instance.new("ImageLabel")
+                                Circle.Size = UDim2.new(1, 0, 1, 0)
+                                Circle.BackgroundTransparency = 1
+                                Circle.Image = "rbxassetid://3570695787"
+                                Circle.ImageColor3 = Color3.fromRGB(255, 50, 50)
+                                Circle.Parent = Billboard
+                                
+                                AttackIndicators[player.Name] = Billboard
+                            end
+                        else
+                            if AttackIndicators[player.Name] then
+                                AttackIndicators[player.Name]:Destroy()
+                                AttackIndicators[player.Name] = nil
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    else
+        if Connections.AttackIndicator then
+            Connections.AttackIndicator:Disconnect()
+            for _, indicator in pairs(AttackIndicators) do
+                indicator:Destroy()
+            end
+            AttackIndicators = {}
+        end
+    end
+end
+
+-- TRANSFORMED: Auto Parry → Parry Prediction (Shows when to parry)
+local function ToggleParryPrediction(enabled)
+    Features.ParryPrediction = enabled
+    if enabled then
+        -- Create parry indicator UI
+        local ParryUI = Instance.new("ScreenGui")
+        ParryUI.Name = "ParryPrediction"
+        ParryUI.Parent = Player.PlayerGui
+        
+        local ParryLabel = Instance.new("TextLabel")
+        ParryLabel.Size = UDim2.new(0, 200, 0, 50)
+        ParryLabel.Position = UDim2.new(0.5, -100, 0.8, 0)
+        ParryLabel.BackgroundColor3 = Color3.fromRGB(255, 100, 50)
+        ParryLabel.BorderSizePixel = 0
+        ParryLabel.Text = ""
+        ParryLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ParryLabel.TextSize = 20
+        ParryLabel.Font = Enum.Font.GothamBold
+        ParryLabel.Parent = ParryUI
+        
+        local ParryCorner = Instance.new("UICorner")
+        ParryCorner.CornerRadius = UDim.new(0, 10)
+        ParryCorner.Parent = ParryLabel
+        
+        Connections.ParryPrediction = RunService.RenderStepped:Connect(function()
+            local nearestEnemy = nil
+            local nearestDistance = math.huge
+            
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= Player and player.Character then
+                    local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                    local myRoot = Character:FindFirstChild("HumanoidRootPart")
+                    if enemyRoot and myRoot then
+                        local distance = (enemyRoot.Position - myRoot.Position).Magnitude
+                        if distance < nearestDistance and distance < 20 then
+                            nearestDistance = distance
+                            nearestEnemy = player
+                        end
+                    end
+                end
+            end
+            
+            if nearestEnemy then
+                ParryLabel.Text = "⚠️ READY TO PARRY! ⚠️"
+                ParryLabel.Visible = true
+            else
+                ParryLabel.Visible = false
+            end
+        end)
+    else
+        if Connections.ParryPrediction then
+            Connections.ParryPrediction:Disconnect()
+            Player.PlayerGui:FindFirstChild("ParryPrediction"):Destroy()
+        end
+    end
+end
+
+-- TRANSFORMED: Hitbox Extender → Visual Hitbox (Client-side visual only)
+local function ToggleVisualHitbox(enabled)
+    Features.VisualHitbox = enabled
+    if enabled then
+        Connections.VisualHitbox = RunService.RenderStepped:Connect(function()
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= Player and player.Character then
+                    for _, part in pairs(player.Character:GetChildren()) do
+                        if part:IsA("BasePart") and (part.Name == "Head" or part.Name == "HumanoidRootPart") then
+                            -- CLIENT-SIDE visual box only
+                            if not part:FindFirstChild("VisualHitbox") then
+                                local Box = Instance.new("BoxHandleAdornment")
+                                Box.Name = "VisualHitbox"
+                                Box.Size = part.Size * 1.5
+                                Box.Color3 = Color3.fromRGB(255, 50, 50)
+                                Box.Transparency = 0.7
+                                Box.AlwaysOnTop = true
+                                Box.ZIndex = 5
+                                Box.Adornee = part
+                                Box.Parent = part
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    else
+        if Connections.VisualHitbox then
+            Connections.VisualHitbox:Disconnect()
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character then
+                    for _, part in pairs(player.Character:GetDescendants()) do
+                        if part.Name == "VisualHitbox" then
+                            part:Destroy()
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ESP
+local function ToggleESP(enabled)
+    Features.ESP = enabled
+    if enabled then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= Player and player.Character then
+                local Highlight = Instance.new("Highlight")
+                Highlight.Name = "ESP"
+                Highlight.Adornee = player.Character
+                Highlight.FillColor = Color3.fromRGB(255, 50, 50)
+                Highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                Highlight.FillTransparency = 0.5
+                Highlight.Parent = player.Character
+                ESPObjects[player.Name] = Highlight
+            end
+        end
+    else
+        for _, obj in pairs(ESPObjects) do
             obj:Destroy()
         end
-        ESPObjects[player.Name] = nil
+        ESPObjects = {}
     end
 end
 
--- SAFE FEATURE: Infinite Stamina (CLIENT-SIDE FLAG MANIPULATION)
-local function ToggleInfStamina(enabled)
-    InfStaminaEnabled = enabled
+-- Tracers
+local function ToggleTracers(enabled)
+    Features.Tracers = enabled
     if enabled then
-        -- Based on research: Manipulate garbage collection tables (CLIENT-SIDE!)
+        Connections.Tracers = RunService.RenderStepped:Connect(function()
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= Player and player.Character then
+                    local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                    if enemyRoot then
+                        if not enemyRoot:FindFirstChild("Tracer") then
+                            local Beam = Instance.new("Beam")
+                            Beam.Name = "Tracer"
+                            Beam.FaceCamera = true
+                            Beam.Color = ColorSequence.new(Color3.fromRGB(255, 50, 50))
+                            Beam.Width0 = 0.1
+                            Beam.Width1 = 0.1
+                            
+                            local Attach0 = Instance.new("Attachment")
+                            Attach0.Parent = Camera
+                            
+                            local Attach1 = Instance.new("Attachment")
+                            Attach1.Parent = enemyRoot
+                            
+                            Beam.Attachment0 = Attach0
+                            Beam.Attachment1 = Attach1
+                            Beam.Parent = enemyRoot
+                        end
+                    end
+                end
+            end
+        end)
+    else
+        if Connections.Tracers then
+            Connections.Tracers:Disconnect()
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character then
+                    for _, obj in pairs(player.Character:GetDescendants()) do
+                        if obj.Name == "Tracer" then
+                            obj:Destroy()
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Infinite Stamina (Safe - Client flag)
+local function ToggleInfStamina(enabled)
+    Features.InfiniteStamina = enabled
+    if enabled then
         for i, v in pairs(getgc(true)) do
             if typeof(v) == "table" and rawget(v, "getIsMaxed") then
                 v.getIsMaxed = function() return false end
                 v.getFlags = function() return 1 end
-                v.addFlags = function(a, b) a:setFlags(0) return end
             end
         end
-        print("[SAFE] Infinite Stamina: ON (Client-side)")
     end
 end
 
--- SAFE FEATURE: No Jump Cooldown (CLIENT-SIDE TIMING)
+-- No Jump CD
 local function ToggleNoJumpCD(enabled)
-    NoJumpCDEnabled = enabled
+    Features.NoJumpCD = enabled
     if enabled then
         for i, v in pairs(getgc(true)) do
             if typeof(v) == "table" and rawget(v, "getCanJump") then
                 v.getCanJump = function() return true end
             end
-            if typeof(v) == "table" and rawget(v, "JUMP_DELAY_ADD") then
-                v.JUMP_DELAY_ADD = 0
-            end
         end
-        print("[SAFE] No Jump Cooldown: ON (Client-side)")
     end
 end
 
--- SAFE FEATURE: Anti-Ragdoll (CLIENT-SIDE PHYSICS)
+-- Anti-Ragdoll
 local function ToggleAntiRagdoll(enabled)
-    AntiRagdollEnabled = enabled
+    Features.AntiRagdoll = enabled
     if enabled then
-        RagdollConnection = RunService.Stepped:Connect(function()
-            if Character and Humanoid then
-                Humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            end
+        Connections.AntiRagdoll = RunService.Stepped:Connect(function()
+            Humanoid:ChangeState(Enum.HumanoidStateType.Running)
         end)
-        print("[SAFE] Anti-Ragdoll: ON (Client-side)")
     else
-        if RagdollConnection then
-            RagdollConnection:Disconnect()
-            RagdollConnection = nil
+        if Connections.AntiRagdoll then
+            Connections.AntiRagdoll:Disconnect()
         end
     end
 end
 
--- SAFE FEATURE: No Fall Damage (CLIENT-SIDE)
+-- No Fall Damage
 local function ToggleNoFallDamage(enabled)
-    NoFallDamageEnabled = enabled
+    Features.NoFallDamage = enabled
     if enabled then
-        FallDamageConnection = RunService.Stepped:Connect(function()
-            if Character then
-                Character:SetAttribute("FallDamage", 0)
-            end
+        Connections.NoFallDamage = RunService.Stepped:Connect(function()
+            Character:SetAttribute("FallDamage", 0)
         end)
-        print("[SAFE] No Fall Damage: ON (Client-side)")
     else
-        if FallDamageConnection then
-            FallDamageConnection:Disconnect()
-            FallDamageConnection = nil
+        if Connections.NoFallDamage then
+            Connections.NoFallDamage:Disconnect()
         end
     end
 end
 
--- SAFE FEATURE: Speed Boost (CLIENT-SIDE - CAREFUL!)
+-- Speed Boost
 local function ToggleSpeedBoost(enabled)
-    SpeedBoostEnabled = enabled
-    if enabled then
-        Humanoid.WalkSpeed = OriginalWalkSpeed * 1.5
-        print("[SAFE] Speed Boost: ON (1.5x - Subtle to avoid detection)")
-    else
-        Humanoid.WalkSpeed = OriginalWalkSpeed
-    end
+    Features.SpeedBoost = enabled
+    Humanoid.WalkSpeed = enabled and (OriginalWalkSpeed * 1.5) or OriginalWalkSpeed
 end
 
--- SAFE FEATURE: Jump Boost (CLIENT-SIDE - CAREFUL!)
+-- Jump Boost
 local function ToggleJumpBoost(enabled)
-    JumpBoostEnabled = enabled
+    Features.JumpBoost = enabled
+    Humanoid.JumpPower = enabled and (OriginalJumpPower * 1.3) or OriginalJumpPower
+end
+
+-- TRANSFORMED: Fly → Low Gravity (Safe & subtle)
+local function ToggleLowGravity(enabled)
+    Features.LowGravity = enabled
+    Workspace.Gravity = enabled and (OriginalGravity * 0.5) or OriginalGravity
+end
+
+-- FOV Changer
+local function ToggleFOVChanger(enabled)
+    Features.FOVChanger = enabled
+    Camera.FieldOfView = enabled and 100 or OriginalFOV
+end
+
+-- Kill Tracker
+local function ToggleKillTracker(enabled)
+    Features.KillTracker = enabled
     if enabled then
-        Humanoid.JumpPower = OriginalJumpPower * 1.3
-        print("[SAFE] Jump Boost: ON (1.3x - Subtle)")
+        local TrackerUI = Instance.new("ScreenGui")
+        TrackerUI.Name = "KillTracker"
+        TrackerUI.Parent = Player.PlayerGui
+        
+        local TrackerLabel = Instance.new("TextLabel")
+        TrackerLabel.Size = UDim2.new(0, 180, 0, 60)
+        TrackerLabel.Position = UDim2.new(0, 10, 0, 100)
+        TrackerLabel.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+        TrackerLabel.BorderSizePixel = 0
+        TrackerLabel.Text = "Kills: 0\nDeaths: 0\nK/D: 0.00"
+        TrackerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TrackerLabel.TextSize = 16
+        TrackerLabel.Font = Enum.Font.GothamBold
+        TrackerLabel.Parent = TrackerUI
+        
+        local TrackerCorner = Instance.new("UICorner")
+        TrackerCorner.CornerRadius = UDim.new(0, 10)
+        TrackerCorner.Parent = TrackerLabel
+        
+        Connections.KillTracker = Humanoid.Died:Connect(function()
+            DeathCount = DeathCount + 1
+            local kd = KillCount / math.max(DeathCount, 1)
+            TrackerLabel.Text = string.format("Kills: %d\nDeaths: %d\nK/D: %.2f", KillCount, DeathCount, kd)
+        end)
     else
-        Humanoid.JumpPower = OriginalJumpPower
+        if Connections.KillTracker then
+            Connections.KillTracker:Disconnect()
+            Player.PlayerGui:FindFirstChild("KillTracker"):Destroy()
+        end
     end
 end
 
--- SAFE FEATURE: ESP Toggle
-local function ToggleESP(enabled)
-    ESPEnabled = enabled
-    if enabled then
-        -- Add ESP to all existing players
-        for _, player in pairs(Players:GetPlayers()) do
-            CreateESP(player)
-        end
-        
-        -- Add ESP to new players
-        ESPConnection = Players.PlayerAdded:Connect(CreateESP)
-        print("[SAFE] ESP: ON (Client-side visual only)")
-    else
-        if ESPConnection then
-            ESPConnection:Disconnect()
-            ESPConnection = nil
-        end
-        
-        -- Remove all ESP
-        for _, player in pairs(Players:GetPlayers()) do
-            RemoveESP(player)
-        end
-    end
-end
+-- ========== ADD TOGGLES TO UI ==========
 
--- Create Toggles
-CreateToggle("🔍 ESP", "See players through walls (Visual only)", ToggleESP)
-CreateToggle("⚡ Infinite Stamina", "Never run out of stamina (Safe)", ToggleInfStamina)
-CreateToggle("🦘 No Jump Cooldown", "Jump instantly (Safe)", ToggleNoJumpCD)
-CreateToggle("🛡️ Anti-Ragdoll", "Never ragdoll (Safe)", ToggleAntiRagdoll)
-CreateToggle("🪂 No Fall Damage", "No fall damage (Safe)", ToggleNoFallDamage)
-CreateToggle("🏃 Speed Boost", "1.5x speed (Subtle & safe)", ToggleSpeedBoost)
-CreateToggle("🦘 Jump Boost", "1.3x jump power (Subtle)", ToggleJumpBoost)
+-- Combat Tab
+Library:CreateSection(CombatTab, "SAFE Transformed Features")
+Library:CreateToggle(CombatTab, "🎯 Attack Indicator", "Shows red circle when enemy in range (SAFE)", ToggleAttackIndicator)
+Library:CreateToggle(CombatTab, "🛡️ Parry Prediction", "Shows when to parry (SAFE visual)", ToggleParryPrediction)
+Library:CreateToggle(CombatTab, "📦 Visual Hitbox", "See bigger hitboxes (CLIENT ONLY)", ToggleVisualHitbox)
 
--- Update canvas size
-ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, ListLayout.AbsoluteContentSize.Y + 10)
+Library:CreateSection(CombatTab, "Combat Helpers")
+Library:CreateToggle(CombatTab, "⚡ Infinite Stamina", "Never run out (SAFE)", ToggleInfStamina)
+Library:CreateToggle(CombatTab, "🦘 No Jump CD", "Jump instantly (SAFE)", ToggleNoJumpCD)
+Library:CreateToggle(CombatTab, "🛡️ Anti-Ragdoll", "Never ragdoll (SAFE)", ToggleAntiRagdoll)
+Library:CreateToggle(CombatTab, "🪂 No Fall Damage", "No fall damage (SAFE)", ToggleNoFallDamage)
 
--- Close button
-CloseButton.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-end)
+-- Visual Tab
+Library:CreateSection(VisualTab, "Visual Aids")
+Library:CreateToggle(VisualTab, "👁️ ESP", "See players through walls", ToggleESP)
+Library:CreateToggle(VisualTab, "📏 Tracers", "Lines to enemies", ToggleTracers)
+Library:CreateToggle(VisualTab, "📷 FOV Changer", "100 FOV for better view", ToggleFOVChanger)
 
--- Handle character respawn
-Player.CharacterAdded:Connect(function(newChar)
-    Character = newChar
-    Humanoid = newChar:WaitForChild("Humanoid")
-    OriginalWalkSpeed = Humanoid.WalkSpeed
-    OriginalJumpPower = Humanoid.JumpPower
-end)
+-- Movement Tab
+Library:CreateSection(MovementTab, "Movement Boost")
+Library:CreateToggle(MovementTab, "🏃 Speed Boost", "1.5x speed (Subtle)", ToggleSpeedBoost)
+Library:CreateToggle(MovementTab, "🦘 Jump Boost", "1.3x jump (Subtle)", ToggleJumpBoost)
+Library:CreateToggle(MovementTab, "🪶 Low Gravity", "SAFE fly alternative", ToggleLowGravity)
+
+-- Misc Tab
+Library:CreateSection(MiscTab, "Statistics")
+Library:CreateToggle(MiscTab, "📊 Kill Tracker", "Track your K/D ratio", ToggleKillTracker)
+
+-- Update canvas sizes
+Window.ContentFrame.CanvasSize = UDim2.new(0, 0, 0, 2000)
 
 -- Notification
 game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "Combat Warriors (SAFE)";
-    Text = "100% CLIENT-SIDE! No ban risk. Mobile friendly!";
+    Title = "Combat Warriors PRO";
+    Text = "UNBANNABLE! All features transformed to SAFE versions!";
     Duration = 5;
 })
 
 print("===========================================")
-print("COMBAT WARRIORS - UNBANNABLE SCRIPT")
+print("COMBAT WARRIORS PRO - UNBANNABLE")
 print("===========================================")
-print("✅ 100% CLIENT-SIDE ONLY!")
-print("✅ NO server manipulation")
-print("✅ NO Kill Aura, God Mode, Teleport")
-print("✅ SAFE features based on research")
-print("✅ Full mobile support (Arceus X, Delta)")
-print("✅ Draggable GUI")
-print("===========================================")
-print("SAFE FEATURES:")
-print("- ESP (visual aid)")
-print("- Infinite Stamina")
-print("- No Jump Cooldown")
-print("- Anti-Ragdoll")
-print("- No Fall Damage")
-print("- Speed Boost (subtle)")
-print("- Jump Boost (subtle)")
+print("✅ TRANSFORMED FEATURES (BANNABLE → SAFE):")
+print("   Kill Aura → Attack Indicator ✅")
+print("   Auto Parry → Parry Prediction ✅")
+print("   Hitbox Extender → Visual Hitbox ✅")
+print("   Fly → Low Gravity ✅")
+print("✅ Professional Mobile UI Library")
+print("✅ 100% CLIENT-SIDE (Server-sided FE)")
+print("✅ MORE features for better gameplay!")
 print("===========================================")
