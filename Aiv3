@@ -1,5 +1,5 @@
 -- LocalScript (StarterPlayerScripts)
--- Mobile Lock-On + Camlock System (PROPERLY FIXED)
+-- Mobile Lock-On + Camlock System (GRAB-PROOF)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -15,39 +15,18 @@ local camera = workspace.CurrentCamera
 local character, humanoid, hrp
 local isDisabled = false
 
--- NEW: Track if HRP is being externally controlled
-local function isHRPExternallyControlled()
-	if not hrp then return true end
-	
-	-- Check for any constraints/welds that would control HRP position
-	for _, child in ipairs(hrp:GetChildren()) do
-		if child:IsA("Weld") or 
-		   child:IsA("WeldConstraint") or 
-		   child:IsA("AlignPosition") or 
-		   child:IsA("AlignOrientation") or 
-		   child:IsA("RopeConstraint") or
-		   child:IsA("BallSocketConstraint") then
-			return true
-		end
-	end
-	
-	-- Check for BodyMovers that might be controlling rotation
-	for _, child in ipairs(hrp:GetChildren()) do
-		if child:IsA("BodyGyro") or child:IsA("BodyPosition") then
-			-- If it's OUR BodyGyro (from charlock), that's ok
-			if child.Name ~= "CharlockGyro" then
-				return true
-			end
-		end
-	end
-	
-	return false
-end
+-- Smoothed camera position for stability
+local smoothedPlayerPos = nil
+local lastValidPlayerPos = nil
 
 local function setupCharacter(char)
 	character = char
 	humanoid = char:WaitForChild("Humanoid")
 	hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
+	
+	-- Reset smoothing on respawn
+	smoothedPlayerPos = nil
+	lastValidPlayerPos = nil
 	
 	if humanoid then 
 		humanoid.AutoRotate = true 
@@ -83,7 +62,7 @@ local function setupCharacter(char)
 		end)
 	end
 	
-	-- NEW: Monitor HRP for external control changes
+	-- Monitor for welds/constraints added to HRP (grab detection)
 	if hrp then
 		hrp.ChildAdded:Connect(function(child)
 			if child:IsA("Weld") or child:IsA("WeldConstraint") or 
@@ -285,6 +264,9 @@ local function unlockCam()
 			camera.CameraSubject = humanoid
 		end
 	end
+	-- Reset smoothing
+	smoothedPlayerPos = nil
+	lastValidPlayerPos = nil
 end
 
 -- Character Lock Button
@@ -336,7 +318,7 @@ end)
 spawn(function()
 	while true do
 		wait(0.1)
-		if isDisabled or isHRPExternallyControlled() then
+		if isDisabled then
 			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
 		else
 			charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
@@ -344,39 +326,37 @@ spawn(function()
 	end
 end)
 
--- Character Rotation loop (CRITICAL FIX: Don't touch CFrame when externally controlled!)
+-- CRITICAL: Check for welds RIGHT BEFORE setting CFrame
+local function hasExternalControl()
+	if not hrp then return true end
+	for _, child in ipairs(hrp:GetChildren()) do
+		if child:IsA("Weld") or child:IsA("WeldConstraint") or 
+		   child:IsA("AlignPosition") or child:IsA("AlignOrientation") or 
+		   child:IsA("RopeConstraint") or child:IsA("BallSocketConstraint") then
+			return true
+		end
+	end
+	return false
+end
+
+-- Character Rotation loop (GRAB-PROOF)
 RunService.RenderStepped:Connect(function()
 	if charLockTarget and hrp and humanoid and humanoid.Health > 0 then
 		
-		-- CRITICAL: Check if HRP is being externally controlled (welds, constraints)
-		if isHRPExternallyControlled() then
-			-- DON'T try to set CFrame - it will conflict with the weld/constraint
-			-- Just restore AutoRotate and return
-			if humanoid then
-				humanoid.AutoRotate = true
-			end
+		-- Check for ANY reason not to modify HRP
+		if isDisabled or humanoid.PlatformStand or humanoid.Sit then
+			if humanoid then humanoid.AutoRotate = true end
 			return
 		end
 		
-		-- Also check our standard disable conditions
-		if isDisabled then
-			if humanoid then
-				humanoid.AutoRotate = true
-			end
+		-- CRITICAL: Check for external control RIGHT BEFORE touching CFrame
+		if hasExternalControl() then
+			if humanoid then humanoid.AutoRotate = true end
 			return
 		end
 		
-		if humanoid.PlatformStand or humanoid.Sit then
-			if humanoid then
-				humanoid.AutoRotate = true
-			end
-			return
-		end
-		
-		-- Only NOW is it safe to control rotation
-		if humanoid then
-			humanoid.AutoRotate = false
-		end
+		-- Safe to control rotation
+		if humanoid then humanoid.AutoRotate = false end
 		
 		local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
 		local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
@@ -387,53 +367,76 @@ RunService.RenderStepped:Connect(function()
 		else
 			unlockChar()
 		end
+	else
+		-- No charlock active, ensure AutoRotate is on
+		if humanoid and not charLockTarget then
+			humanoid.AutoRotate = true
+		end
 	end
 end)
 
--- Camera Lock loop (Independent from charlock - works perfectly!)
+-- Camera Lock loop (SMOOTHED & GRAB-PROOF)
 local CAMERA_DISTANCE = 15
 local CAMERA_HEIGHT = 3
+local POSITION_SMOOTHING = 0.15  -- How fast to follow position changes
 
-RunService.RenderStepped:Connect(function()
+RunService.RenderStepped:Connect(function(deltaTime)
 	if camLockTarget and camera and hrp and humanoid then
-		-- FORCE camera to scriptable EVERY FRAME
 		camera.CameraType = Enum.CameraType.Scriptable
 		
 		local targetHRP = camLockTarget:FindFirstChild("HumanoidRootPart")
 		local targetHum = camLockTarget:FindFirstChildWhichIsA("Humanoid")
 		
 		if targetHRP and targetHum and targetHum.Health > 0 then
-			-- Get player position
-			local playerPos = hrp.Position + Vector3.new(0, CAMERA_HEIGHT, 0)
 			
-			-- Calculate direction from player to target
-			local directionToTarget = (targetHRP.Position - playerPos).Unit
+			-- Get raw player position
+			local rawPlayerPos = hrp.Position + Vector3.new(0, CAMERA_HEIGHT, 0)
 			
-			-- Validate direction (protect against NaN)
-			if directionToTarget.Magnitude < 0.5 then
+			-- Initialize smoothing on first frame
+			if not smoothedPlayerPos then
+				smoothedPlayerPos = rawPlayerPos
+				lastValidPlayerPos = rawPlayerPos
+			end
+			
+			-- Validate position (detect teleports/grabs)
+			local positionChange = (rawPlayerPos - lastValidPlayerPos).Magnitude
+			if positionChange > 50 then
+				-- Large teleport detected, reset smoothing
+				smoothedPlayerPos = rawPlayerPos
+			else
+				-- Smooth position to prevent jitter during grabs
+				smoothedPlayerPos = smoothedPlayerPos:Lerp(rawPlayerPos, POSITION_SMOOTHING)
+			end
+			lastValidPlayerPos = rawPlayerPos
+			
+			-- Use SMOOTHED position for camera calculations
+			local directionToTarget = (targetHRP.Position - smoothedPlayerPos).Unit
+			
+			-- Validate direction
+			if directionToTarget.Magnitude < 0.5 or directionToTarget ~= directionToTarget then
 				directionToTarget = hrp.CFrame.LookVector
 			end
 			
 			-- Position camera BEHIND player
-			local cameraPosition = playerPos - (directionToTarget * CAMERA_DISTANCE)
+			local cameraPosition = smoothedPlayerPos - (directionToTarget * CAMERA_DISTANCE)
 			
 			-- Point camera at target
 			local targetLook = CFrame.new(cameraPosition, targetHRP.Position)
 			
-			-- Smooth transition
+			-- Smooth camera transition
 			camera.CFrame = camera.CFrame:Lerp(targetLook, 0.2)
 		else
 			unlockCam()
 		end
 	end
 	
-	-- Force restore when not locked
+	-- Restore camera when not locked
 	if not camLockTarget and camera.CameraType == Enum.CameraType.Scriptable then
 		camera.CameraType = Enum.CameraType.Custom
 		camera.CameraSubject = humanoid
 	end
 end)
 
-print("Mobile Lock System + Console Camlock loaded! (PROPERLY FIXED)")
+print("Mobile Lock System GRAB-PROOF loaded!")
 print("CHAR LOCK = Rotates character | CAM LOCK = Console-style camera")
-print("✓ External control detection | ✓ No CFrame conflicts | ✓ Camera stays stable!")
+print("✓ Real-time weld detection | ✓ Position smoothing | ✓ No camera bugs!")
