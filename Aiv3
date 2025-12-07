@@ -1,5 +1,5 @@
 -- LocalScript (StarterPlayerScripts)
--- Mobile Lock-On + Camlock System (GRAB-PROOF)
+-- Mobile Lock-On + Camlock System (SMOOTH ROTATION + COLLAPSIBLE UI)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -15,23 +15,17 @@ local camera = workspace.CurrentCamera
 local character, humanoid, hrp
 local isDisabled = false
 
--- Smoothed camera position for stability
-local smoothedPlayerPos = nil
-local lastValidPlayerPos = nil
+-- ROTATION SETTINGS (Adjustable)
+local rotationSpeed = 0.15  -- Default: Balanced (0.05 = Instant, 0.3 = Very Smooth)
 
 local function setupCharacter(char)
 	character = char
 	humanoid = char:WaitForChild("Humanoid")
 	hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
 	
-	-- Reset smoothing on respawn
-	smoothedPlayerPos = nil
-	lastValidPlayerPos = nil
-	
 	if humanoid then 
 		humanoid.AutoRotate = true 
 		
-		-- Detect ragdoll/grab through state changes
 		humanoid.StateChanged:Connect(function(oldState, newState)
 			if newState == Enum.HumanoidStateType.Physics or 
 			   newState == Enum.HumanoidStateType.Ragdoll or
@@ -45,32 +39,21 @@ local function setupCharacter(char)
 			end
 		end)
 		
-		-- Detect PlatformStand changes (common grab method)
 		humanoid:GetPropertyChangedSignal("PlatformStand"):Connect(function()
-			if humanoid.PlatformStand then
-				isDisabled = true
-			else
-				isDisabled = false
-			end
+			isDisabled = humanoid.PlatformStand
 		end)
 		
-		-- Detect Sit changes (some grabs use this)
 		humanoid:GetPropertyChangedSignal("Sit"):Connect(function()
-			if humanoid.Sit then
-				isDisabled = true
-			end
+			if humanoid.Sit then isDisabled = true end
 		end)
 	end
 	
-	-- Monitor for welds/constraints added to HRP (grab detection)
 	if hrp then
 		hrp.ChildAdded:Connect(function(child)
 			if child:IsA("Weld") or child:IsA("WeldConstraint") or 
 			   child:IsA("AlignPosition") or child:IsA("AlignOrientation") or 
 			   child:IsA("RopeConstraint") then
 				isDisabled = true
-				
-				-- Re-enable when constraint is removed
 				child.AncestryChanged:Connect(function()
 					if not child:IsDescendantOf(game) then
 						task.wait(0.5)
@@ -85,29 +68,55 @@ end
 if player.Character then setupCharacter(player.Character) end
 player.CharacterAdded:Connect(setupCharacter)
 
--- GUI
+-- ========== COLLAPSIBLE UI ==========
 local gui = Instance.new("ScreenGui")
 gui.Name = "LockOnUI"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
+local isUIExpanded = false
+
+-- Minimized Dot Button
+local dotBtn = Instance.new("TextButton")
+dotBtn.Size = UDim2.new(0, 50, 0, 50)
+dotBtn.Position = UDim2.new(0.06, 0, 0.8, 0)
+dotBtn.Text = "🎯"
+dotBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+dotBtn.TextColor3 = Color3.new(1, 1, 1)
+dotBtn.Font = Enum.Font.GothamBold
+dotBtn.TextSize = 24
+dotBtn.Active = true
+dotBtn.Parent = gui
+
+local dotCorner = Instance.new("UICorner")
+dotCorner.CornerRadius = UDim.new(0.5, 0)
+dotCorner.Parent = dotBtn
+
+-- Container for expanded buttons
+local container = Instance.new("Frame")
+container.Size = UDim2.new(0, 360, 0, 60)
+container.Position = UDim2.new(0.06, 0, 0.8, 0)
+container.BackgroundTransparency = 1
+container.Visible = false
+container.Parent = gui
+
 -- Character Lock Button
 local charLockBtn = Instance.new("TextButton")
 charLockBtn.Size = UDim2.new(0, 110, 0, 50)
-charLockBtn.Position = UDim2.new(0.06, 0, 0.8, 0)
+charLockBtn.Position = UDim2.new(0, 0, 0, 0)
 charLockBtn.Text = "CHAR LOCK"
 charLockBtn.BackgroundColor3 = Color3.fromRGB(36, 137, 206)
 charLockBtn.TextColor3 = Color3.new(1, 1, 1)
 charLockBtn.Font = Enum.Font.GothamBold
-charLockBtn.TextSize = 16
+charLockBtn.TextSize = 14
 charLockBtn.Active = true
-charLockBtn.Parent = gui
+charLockBtn.Parent = container
 
 local charCorner = Instance.new("UICorner")
 charCorner.CornerRadius = UDim.new(0, 8)
 charCorner.Parent = charLockBtn
 
--- Status indicator for character lock
+-- Status indicator
 local charDot = Instance.new("Frame")
 charDot.Size = UDim2.new(0, 8, 0, 8)
 charDot.Position = UDim2.new(1, -12, 0, 4)
@@ -122,52 +131,235 @@ charDotCorner.Parent = charDot
 -- Camlock Button
 local camLockBtn = Instance.new("TextButton")
 camLockBtn.Size = UDim2.new(0, 110, 0, 50)
-camLockBtn.Position = UDim2.new(0.06, 120, 0.8, 0)
+camLockBtn.Position = UDim2.new(0, 120, 0, 0)
 camLockBtn.Text = "CAM LOCK"
 camLockBtn.BackgroundColor3 = Color3.fromRGB(206, 137, 36)
 camLockBtn.TextColor3 = Color3.new(1, 1, 1)
 camLockBtn.Font = Enum.Font.GothamBold
-camLockBtn.TextSize = 16
+camLockBtn.TextSize = 14
 camLockBtn.Active = true
-camLockBtn.Parent = gui
+camLockBtn.Parent = container
 
 local camCorner = Instance.new("UICorner")
 camCorner.CornerRadius = UDim.new(0, 8)
 camCorner.Parent = camLockBtn
 
--- Draggable (both buttons move together)
-local dragging, dragInput, dragStart, startPos
-local function updateDrag(input)
-	local delta = input.Position - dragStart
-	charLockBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
-		startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-	camLockBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X + 120,
-		startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+-- Settings Button (Gear Icon)
+local settingsBtn = Instance.new("TextButton")
+settingsBtn.Size = UDim2.new(0, 50, 0, 50)
+settingsBtn.Position = UDim2.new(0, 240, 0, 0)
+settingsBtn.Text = "⚙️"
+settingsBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+settingsBtn.TextColor3 = Color3.new(1, 1, 1)
+settingsBtn.Font = Enum.Font.GothamBold
+settingsBtn.TextSize = 24
+settingsBtn.Active = true
+settingsBtn.Parent = container
+
+local settingsCorner = Instance.new("UICorner")
+settingsCorner.CornerRadius = UDim.new(0, 8)
+settingsCorner.Parent = settingsBtn
+
+-- Close Button (X)
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 50, 0, 50)
+closeBtn.Position = UDim2.new(0, 300, 0, 0)
+closeBtn.Text = "✕"
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeBtn.TextColor3 = Color3.new(1, 1, 1)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 24
+closeBtn.Active = true
+closeBtn.Parent = container
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 8)
+closeCorner.Parent = closeBtn
+
+-- Settings Panel
+local settingsPanel = Instance.new("Frame")
+settingsPanel.Size = UDim2.new(0, 300, 0, 150)
+settingsPanel.Position = UDim2.new(0, 0, 0, -160)
+settingsPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+settingsPanel.Visible = false
+settingsPanel.Parent = container
+
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 10)
+panelCorner.Parent = settingsPanel
+
+-- Settings Title
+local settingsTitle = Instance.new("TextLabel")
+settingsTitle.Size = UDim2.new(1, -20, 0, 30)
+settingsTitle.Position = UDim2.new(0, 10, 0, 10)
+settingsTitle.Text = "ROTATION SPEED"
+settingsTitle.BackgroundTransparency = 1
+settingsTitle.TextColor3 = Color3.new(1, 1, 1)
+settingsTitle.Font = Enum.Font.GothamBold
+settingsTitle.TextSize = 16
+settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
+settingsTitle.Parent = settingsPanel
+
+-- Speed Label
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(1, -20, 0, 20)
+speedLabel.Position = UDim2.new(0, 10, 0, 50)
+speedLabel.Text = "Balanced"
+speedLabel.BackgroundTransparency = 1
+speedLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+speedLabel.Font = Enum.Font.Gotham
+speedLabel.TextSize = 14
+speedLabel.TextXAlignment = Enum.TextXAlignment.Center
+speedLabel.Parent = settingsPanel
+
+-- Slider Background
+local sliderBg = Instance.new("Frame")
+sliderBg.Size = UDim2.new(1, -40, 0, 8)
+sliderBg.Position = UDim2.new(0, 20, 0, 85)
+sliderBg.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+sliderBg.BorderSizePixel = 0
+sliderBg.Parent = settingsPanel
+
+local sliderBgCorner = Instance.new("UICorner")
+sliderBgCorner.CornerRadius = UDim.new(0.5, 0)
+sliderBgCorner.Parent = sliderBg
+
+-- Slider Fill
+local sliderFill = Instance.new("Frame")
+sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(36, 137, 206)
+sliderFill.BorderSizePixel = 0
+sliderFill.Parent = sliderBg
+
+local sliderFillCorner = Instance.new("UICorner")
+sliderFillCorner.CornerRadius = UDim.new(0.5, 0)
+sliderFillCorner.Parent = sliderFill
+
+-- Slider Button
+local sliderBtn = Instance.new("TextButton")
+sliderBtn.Size = UDim2.new(0, 25, 0, 25)
+sliderBtn.Position = UDim2.new(0.5, -12.5, 0.5, -12.5)
+sliderBtn.Text = ""
+sliderBtn.BackgroundColor3 = Color3.new(1, 1, 1)
+sliderBtn.Active = true
+sliderBtn.Parent = sliderBg
+
+local sliderBtnCorner = Instance.new("UICorner")
+sliderBtnCorner.CornerRadius = UDim.new(0.5, 0)
+sliderBtnCorner.Parent = sliderBtn
+
+-- Speed presets text
+local presetText = Instance.new("TextLabel")
+presetText.Size = UDim2.new(1, -40, 0, 20)
+presetText.Position = UDim2.new(0, 20, 0, 110)
+presetText.Text = "Fast ←          → Smooth"
+presetText.BackgroundTransparency = 1
+presetText.TextColor3 = Color3.fromRGB(150, 150, 150)
+presetText.Font = Enum.Font.Gotham
+presetText.TextSize = 12
+presetText.Parent = settingsPanel
+
+-- Slider Logic
+local draggingSlider = false
+
+local function updateSlider(position)
+	local bgPos = sliderBg.AbsolutePosition.X
+	local bgSize = sliderBg.AbsoluteSize.X
+	local relativeX = math.clamp(position - bgPos, 0, bgSize)
+	local percent = relativeX / bgSize
+	
+	-- Update slider position
+	sliderBtn.Position = UDim2.new(percent, -12.5, 0.5, -12.5)
+	sliderFill.Size = UDim2.new(percent, 0, 1, 0)
+	
+	-- Map to rotation speed (0.05 to 0.3)
+	rotationSpeed = 0.05 + (percent * 0.25)
+	
+	-- Update label
+	if percent < 0.3 then
+		speedLabel.Text = "Fast"
+		speedLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+	elseif percent < 0.7 then
+		speedLabel.Text = "Balanced"
+		speedLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+	else
+		speedLabel.Text = "Smooth"
+		speedLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+	end
 end
 
-charLockBtn.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = true
-		dragStart = input.Position
-		startPos = charLockBtn.Position
-		dragInput = input
-		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then dragging = false end
-		end)
+sliderBtn.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+	   input.UserInputType == Enum.UserInputType.Touch then
+		draggingSlider = true
 	end
 end)
 
-camLockBtn.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = true
-		dragStart = input.Position
-		startPos = charLockBtn.Position
-		dragInput = input
-		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then dragging = false end
-		end)
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+	   input.UserInputType == Enum.UserInputType.Touch then
+		draggingSlider = false
 	end
 end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or 
+	                       input.UserInputType == Enum.UserInputType.Touch) then
+		updateSlider(input.Position.X)
+	end
+end)
+
+-- Initialize slider to default (Balanced)
+updateSlider(sliderBg.AbsolutePosition.X + sliderBg.AbsoluteSize.X * 0.5)
+
+-- UI Toggle Logic
+local function toggleUI()
+	isUIExpanded = not isUIExpanded
+	dotBtn.Visible = not isUIExpanded
+	container.Visible = isUIExpanded
+	if not isUIExpanded then
+		settingsPanel.Visible = false
+	end
+end
+
+dotBtn.Activated:Connect(toggleUI)
+closeBtn.Activated:Connect(toggleUI)
+
+settingsBtn.Activated:Connect(function()
+	settingsPanel.Visible = not settingsPanel.Visible
+end)
+
+-- Draggable
+local dragging, dragInput, dragStart, startPos
+
+local function updateDrag(input)
+	local delta = input.Position - dragStart
+	if isUIExpanded then
+		container.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	else
+		dotBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end
+
+local function startDrag(btn, input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+	   input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = btn.Position
+		dragInput = input
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then 
+				dragging = false 
+			end
+		end)
+	end
+end
+
+dotBtn.InputBegan:Connect(function(input) startDrag(dotBtn, input) end)
+container.InputBegan:Connect(function(input) startDrag(container, input) end)
 
 UserInputService.InputChanged:Connect(function(input)
 	if dragging and input == dragInput then updateDrag(input) end
@@ -244,9 +436,7 @@ end
 
 function unlockChar()
 	charLockTarget = nil
-	if humanoid then 
-		humanoid.AutoRotate = true
-	end
+	if humanoid then humanoid.AutoRotate = true end
 	charLockBtn.Text = "CHAR LOCK"
 	charLockBtn.BackgroundColor3 = Color3.fromRGB(36, 137, 206)
 	if not camLockTarget then detachBillboard() end
@@ -257,16 +447,10 @@ local function unlockCam()
 	camLockBtn.Text = "CAM LOCK"
 	camLockBtn.BackgroundColor3 = Color3.fromRGB(206, 137, 36)
 	if not charLockTarget then detachBillboard() end
-	-- Restore camera to normal
 	if camera then
 		camera.CameraType = Enum.CameraType.Custom
-		if humanoid then
-			camera.CameraSubject = humanoid
-		end
+		if humanoid then camera.CameraSubject = humanoid end
 	end
-	-- Reset smoothing
-	smoothedPlayerPos = nil
-	lastValidPlayerPos = nil
 end
 
 -- Character Lock Button
@@ -284,9 +468,7 @@ charLockBtn.Activated:Connect(function()
 		else
 			charLockBtn.Text = "NO TARGET"
 			task.delay(1, function()
-				if not charLockTarget then 
-					charLockBtn.Text = "CHAR LOCK" 
-				end
+				if not charLockTarget then charLockBtn.Text = "CHAR LOCK" end
 			end)
 		end
 	end
@@ -306,9 +488,7 @@ camLockBtn.Activated:Connect(function()
 		else
 			camLockBtn.Text = "NO TARGET"
 			task.delay(1, function()
-				if not camLockTarget then 
-					camLockBtn.Text = "CAM LOCK" 
-				end
+				if not camLockTarget then camLockBtn.Text = "CAM LOCK" end
 			end)
 		end
 	end
@@ -318,44 +498,19 @@ end)
 spawn(function()
 	while true do
 		wait(0.1)
-		if isDisabled then
-			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-		else
-			charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-		end
+		charDot.BackgroundColor3 = isDisabled and Color3.fromRGB(255, 80, 80) or Color3.fromRGB(100, 255, 100)
 	end
 end)
 
--- CRITICAL: Check for welds RIGHT BEFORE setting CFrame
-local function hasExternalControl()
-	if not hrp then return true end
-	for _, child in ipairs(hrp:GetChildren()) do
-		if child:IsA("Weld") or child:IsA("WeldConstraint") or 
-		   child:IsA("AlignPosition") or child:IsA("AlignOrientation") or 
-		   child:IsA("RopeConstraint") or child:IsA("BallSocketConstraint") then
-			return true
-		end
-	end
-	return false
-end
-
--- Character Rotation loop (GRAB-PROOF)
+-- Character Rotation loop (SMOOTH ROTATION - FIXES CAMERA BUG!)
 RunService.RenderStepped:Connect(function()
 	if charLockTarget and hrp and humanoid and humanoid.Health > 0 then
 		
-		-- Check for ANY reason not to modify HRP
 		if isDisabled or humanoid.PlatformStand or humanoid.Sit then
 			if humanoid then humanoid.AutoRotate = true end
 			return
 		end
 		
-		-- CRITICAL: Check for external control RIGHT BEFORE touching CFrame
-		if hasExternalControl() then
-			if humanoid then humanoid.AutoRotate = true end
-			return
-		end
-		
-		-- Safe to control rotation
 		if humanoid then humanoid.AutoRotate = false end
 		
 		local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
@@ -363,24 +518,25 @@ RunService.RenderStepped:Connect(function()
 		
 		if targetHRP and targetHum and targetHum.Health > 0 then
 			local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
-			hrp.CFrame = CFrame.new(hrp.Position, lookPos)
+			local targetCFrame = CFrame.new(hrp.Position, lookPos)
+			
+			-- SMOOTH ROTATION (KEY FIX!)
+			hrp.CFrame = hrp.CFrame:Lerp(targetCFrame, rotationSpeed)
 		else
 			unlockChar()
 		end
 	else
-		-- No charlock active, ensure AutoRotate is on
 		if humanoid and not charLockTarget then
 			humanoid.AutoRotate = true
 		end
 	end
 end)
 
--- Camera Lock loop (SMOOTHED & GRAB-PROOF)
+-- Camera Lock loop
 local CAMERA_DISTANCE = 15
 local CAMERA_HEIGHT = 3
-local POSITION_SMOOTHING = 0.15  -- How fast to follow position changes
 
-RunService.RenderStepped:Connect(function(deltaTime)
+RunService.RenderStepped:Connect(function()
 	if camLockTarget and camera and hrp and humanoid then
 		camera.CameraType = Enum.CameraType.Scriptable
 		
@@ -388,55 +544,27 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		local targetHum = camLockTarget:FindFirstChildWhichIsA("Humanoid")
 		
 		if targetHRP and targetHum and targetHum.Health > 0 then
+			local playerPos = hrp.Position + Vector3.new(0, CAMERA_HEIGHT, 0)
+			local directionToTarget = (targetHRP.Position - playerPos).Unit
 			
-			-- Get raw player position
-			local rawPlayerPos = hrp.Position + Vector3.new(0, CAMERA_HEIGHT, 0)
-			
-			-- Initialize smoothing on first frame
-			if not smoothedPlayerPos then
-				smoothedPlayerPos = rawPlayerPos
-				lastValidPlayerPos = rawPlayerPos
-			end
-			
-			-- Validate position (detect teleports/grabs)
-			local positionChange = (rawPlayerPos - lastValidPlayerPos).Magnitude
-			if positionChange > 50 then
-				-- Large teleport detected, reset smoothing
-				smoothedPlayerPos = rawPlayerPos
-			else
-				-- Smooth position to prevent jitter during grabs
-				smoothedPlayerPos = smoothedPlayerPos:Lerp(rawPlayerPos, POSITION_SMOOTHING)
-			end
-			lastValidPlayerPos = rawPlayerPos
-			
-			-- Use SMOOTHED position for camera calculations
-			local directionToTarget = (targetHRP.Position - smoothedPlayerPos).Unit
-			
-			-- Validate direction
-			if directionToTarget.Magnitude < 0.5 or directionToTarget ~= directionToTarget then
+			if directionToTarget.Magnitude < 0.5 then
 				directionToTarget = hrp.CFrame.LookVector
 			end
 			
-			-- Position camera BEHIND player
-			local cameraPosition = smoothedPlayerPos - (directionToTarget * CAMERA_DISTANCE)
-			
-			-- Point camera at target
+			local cameraPosition = playerPos - (directionToTarget * CAMERA_DISTANCE)
 			local targetLook = CFrame.new(cameraPosition, targetHRP.Position)
 			
-			-- Smooth camera transition
 			camera.CFrame = camera.CFrame:Lerp(targetLook, 0.2)
 		else
 			unlockCam()
 		end
 	end
 	
-	-- Restore camera when not locked
 	if not camLockTarget and camera.CameraType == Enum.CameraType.Scriptable then
 		camera.CameraType = Enum.CameraType.Custom
 		camera.CameraSubject = humanoid
 	end
 end)
 
-print("Mobile Lock System GRAB-PROOF loaded!")
-print("CHAR LOCK = Rotates character | CAM LOCK = Console-style camera")
-print("✓ Real-time weld detection | ✓ Position smoothing | ✓ No camera bugs!")
+print("Mobile Lock System with SMOOTH ROTATION loaded!")
+print("🎯 Click dot to expand | ⚙️ Adjust rotation speed | No more camera bugs!")
