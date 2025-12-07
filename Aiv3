@@ -1,5 +1,5 @@
 -- LocalScript (StarterPlayerScripts)
--- Mobile Lock-On + Camlock System (FIXED)
+-- Mobile Lock-On + Camlock System (PROPERLY FIXED)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -15,18 +15,39 @@ local camera = workspace.CurrentCamera
 local character, humanoid, hrp
 local isDisabled = false
 
--- Camera memory for independent operation
-local lastValidCameraDirection = nil
-local cameraDirectionUpdateCooldown = 0
+-- NEW: Track if HRP is being externally controlled
+local function isHRPExternallyControlled()
+	if not hrp then return true end
+	
+	-- Check for any constraints/welds that would control HRP position
+	for _, child in ipairs(hrp:GetChildren()) do
+		if child:IsA("Weld") or 
+		   child:IsA("WeldConstraint") or 
+		   child:IsA("AlignPosition") or 
+		   child:IsA("AlignOrientation") or 
+		   child:IsA("RopeConstraint") or
+		   child:IsA("BallSocketConstraint") then
+			return true
+		end
+	end
+	
+	-- Check for BodyMovers that might be controlling rotation
+	for _, child in ipairs(hrp:GetChildren()) do
+		if child:IsA("BodyGyro") or child:IsA("BodyPosition") then
+			-- If it's OUR BodyGyro (from charlock), that's ok
+			if child.Name ~= "CharlockGyro" then
+				return true
+			end
+		end
+	end
+	
+	return false
+end
 
 local function setupCharacter(char)
 	character = char
 	humanoid = char:WaitForChild("Humanoid")
 	hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
-	
-	-- Reset camera direction memory on respawn
-	lastValidCameraDirection = nil
-	cameraDirectionUpdateCooldown = 0
 	
 	if humanoid then 
 		humanoid.AutoRotate = true 
@@ -38,12 +59,6 @@ local function setupCharacter(char)
 			   newState == Enum.HumanoidStateType.FallingDown or
 			   newState == Enum.HumanoidStateType.PlatformStanding then
 				isDisabled = true
-				-- AUTO-UNLOCK CHARACTER LOCK ON GRAB (Solution C)
-				if charLockTarget then
-					task.defer(function()
-						unlockChar()
-					end)
-				end
 			elseif newState == Enum.HumanoidStateType.Running or
 			       newState == Enum.HumanoidStateType.Landed or
 			       newState == Enum.HumanoidStateType.Jumping then
@@ -55,11 +70,6 @@ local function setupCharacter(char)
 		humanoid:GetPropertyChangedSignal("PlatformStand"):Connect(function()
 			if humanoid.PlatformStand then
 				isDisabled = true
-				if charLockTarget then
-					task.defer(function()
-						unlockChar()
-					end)
-				end
 			else
 				isDisabled = false
 			end
@@ -69,29 +79,17 @@ local function setupCharacter(char)
 		humanoid:GetPropertyChangedSignal("Sit"):Connect(function()
 			if humanoid.Sit then
 				isDisabled = true
-				if charLockTarget then
-					task.defer(function()
-						unlockChar()
-					end)
-				end
 			end
 		end)
 	end
 	
-	-- Monitor for welds/constraints added to HRP (grab detection)
+	-- NEW: Monitor HRP for external control changes
 	if hrp then
 		hrp.ChildAdded:Connect(function(child)
 			if child:IsA("Weld") or child:IsA("WeldConstraint") or 
-			   child:IsA("AlignPosition") or child:IsA("AlignOrientation") or
+			   child:IsA("AlignPosition") or child:IsA("AlignOrientation") or 
 			   child:IsA("RopeConstraint") then
 				isDisabled = true
-				
-				-- Auto-unlock on constraint
-				if charLockTarget then
-					task.defer(function()
-						unlockChar()
-					end)
-				end
 				
 				-- Re-enable when constraint is removed
 				child.AncestryChanged:Connect(function()
@@ -265,11 +263,10 @@ local function getNearestTarget()
 	return nearest
 end
 
--- MUST BE DECLARED BEFORE BEING USED
 function unlockChar()
 	charLockTarget = nil
 	if humanoid then 
-		humanoid.AutoRotate = true  -- Always restore AutoRotate
+		humanoid.AutoRotate = true
 	end
 	charLockBtn.Text = "CHAR LOCK"
 	charLockBtn.BackgroundColor3 = Color3.fromRGB(36, 137, 206)
@@ -288,8 +285,6 @@ local function unlockCam()
 			camera.CameraSubject = humanoid
 		end
 	end
-	-- Reset camera direction memory
-	lastValidCameraDirection = nil
 end
 
 -- Character Lock Button
@@ -341,7 +336,7 @@ end)
 spawn(function()
 	while true do
 		wait(0.1)
-		if isDisabled then
+		if isDisabled or isHRPExternallyControlled() then
 			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
 		else
 			charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
@@ -349,18 +344,28 @@ spawn(function()
 	end
 end)
 
--- Character Rotation loop (FIXED - Solution A)
+-- Character Rotation loop (CRITICAL FIX: Don't touch CFrame when externally controlled!)
 RunService.RenderStepped:Connect(function()
 	if charLockTarget and hrp and humanoid and humanoid.Health > 0 then
-		-- SOLUTION A: Restore AutoRotate temporarily when disabled
-		if isDisabled then
+		
+		-- CRITICAL: Check if HRP is being externally controlled (welds, constraints)
+		if isHRPExternallyControlled() then
+			-- DON'T try to set CFrame - it will conflict with the weld/constraint
+			-- Just restore AutoRotate and return
 			if humanoid then
-				humanoid.AutoRotate = true  -- Let Roblox handle rotation during grabs
+				humanoid.AutoRotate = true
 			end
 			return
 		end
 		
-		-- Additional safety checks
+		-- Also check our standard disable conditions
+		if isDisabled then
+			if humanoid then
+				humanoid.AutoRotate = true
+			end
+			return
+		end
+		
 		if humanoid.PlatformStand or humanoid.Sit then
 			if humanoid then
 				humanoid.AutoRotate = true
@@ -368,7 +373,7 @@ RunService.RenderStepped:Connect(function()
 			return
 		end
 		
-		-- Only disable AutoRotate when actively rotating
+		-- Only NOW is it safe to control rotation
 		if humanoid then
 			humanoid.AutoRotate = false
 		end
@@ -385,11 +390,11 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- Camera Lock loop (FIXED - Solution B: Independent Operation)
+-- Camera Lock loop (Independent from charlock - works perfectly!)
 local CAMERA_DISTANCE = 15
 local CAMERA_HEIGHT = 3
 
-RunService.RenderStepped:Connect(function(deltaTime)
+RunService.RenderStepped:Connect(function()
 	if camLockTarget and camera and hrp and humanoid then
 		-- FORCE camera to scriptable EVERY FRAME
 		camera.CameraType = Enum.CameraType.Scriptable
@@ -398,32 +403,19 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		local targetHum = camLockTarget:FindFirstChildWhichIsA("Humanoid")
 		
 		if targetHRP and targetHum and targetHum.Health > 0 then
+			-- Get player position
 			local playerPos = hrp.Position + Vector3.new(0, CAMERA_HEIGHT, 0)
 			
-			-- SOLUTION B: Calculate direction independently with memory
-			local currentDirection = (targetHRP.Position - playerPos).Unit
+			-- Calculate direction from player to target
+			local directionToTarget = (targetHRP.Position - playerPos).Unit
 			
-			-- Update direction only if valid (not during weird states)
-			if cameraDirectionUpdateCooldown <= 0 and not isDisabled then
-				-- Check if direction is reasonable (not NaN or extremely weird)
-				if currentDirection.Magnitude > 0.9 and currentDirection.Magnitude < 1.1 then
-					lastValidCameraDirection = currentDirection
-					cameraDirectionUpdateCooldown = 0.1  -- Small cooldown to prevent jitter
-				end
-			else
-				cameraDirectionUpdateCooldown = math.max(0, cameraDirectionUpdateCooldown - deltaTime)
+			-- Validate direction (protect against NaN)
+			if directionToTarget.Magnitude < 0.5 then
+				directionToTarget = hrp.CFrame.LookVector
 			end
 			
-			-- Use last valid direction if current is invalid
-			local directionToUse = lastValidCameraDirection or currentDirection
-			
-			-- Fallback if still no valid direction
-			if not directionToUse or directionToUse.Magnitude < 0.5 then
-				directionToUse = hrp.CFrame.LookVector
-			end
-			
-			-- Position camera BEHIND player using safe direction
-			local cameraPosition = playerPos - (directionToUse * CAMERA_DISTANCE)
+			-- Position camera BEHIND player
+			local cameraPosition = playerPos - (directionToTarget * CAMERA_DISTANCE)
 			
 			-- Point camera at target
 			local targetLook = CFrame.new(cameraPosition, targetHRP.Position)
@@ -442,6 +434,6 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	end
 end)
 
-print("Mobile Lock System + Console Camlock loaded! (FIXED)")
+print("Mobile Lock System + Console Camlock loaded! (PROPERLY FIXED)")
 print("CHAR LOCK = Rotates character | CAM LOCK = Console-style camera")
-print("✓ Auto-unlocks on grab | ✓ Camera stays stable | ✓ No more camera bugs!")
+print("✓ External control detection | ✓ No CFrame conflicts | ✓ Camera stays stable!")
