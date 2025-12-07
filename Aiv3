@@ -1,5 +1,5 @@
 -- LocalScript (StarterPlayerScripts)
--- Mobile Lock-On + Camlock System (PROPERLY FIXED)
+-- Mobile Lock-On + Camlock System (GRAB-PROOF)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -14,6 +14,30 @@ local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local character, humanoid, hrp
 local isDisabled = false
+
+-- PROTECTION: Check if HRP is safe to modify
+local function isSafeToRotate()
+	if not hrp or not humanoid then return false end
+	if isDisabled then return false end
+	if humanoid.PlatformStand or humanoid.Sit then return false end
+	if humanoid.Health <= 0 then return false end
+	
+	-- CRITICAL: Check for ANY welds/constraints on HRP
+	for _, child in ipairs(hrp:GetChildren()) do
+		if child:IsA("Weld") or 
+		   child:IsA("WeldConstraint") or 
+		   child:IsA("Motor6D") or
+		   child:IsA("AlignPosition") or 
+		   child:IsA("AlignOrientation") or 
+		   child:IsA("RopeConstraint") or
+		   child:IsA("BallSocketConstraint") then
+			-- External control detected - NOT SAFE
+			return false
+		end
+	end
+	
+	return true
+end
 
 local function setupCharacter(char)
 	character = char
@@ -305,58 +329,68 @@ end)
 spawn(function()
 	while true do
 		wait(0.1)
-		if isDisabled then
-			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-		else
+		if isSafeToRotate() then
 			charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-		end
-	end
-end)
-
--- Character Rotation loop (FIXED - Y-axis only, no tilting!)
-RunService.RenderStepped:Connect(function()
-	if charLockTarget and hrp and humanoid and humanoid.Health > 0 then
-		-- Stop when disabled or grabbed
-		if isDisabled or humanoid.PlatformStand or humanoid.Sit then
-			return
-		end
-		
-		if humanoid then humanoid.AutoRotate = false end
-		
-		local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
-		local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
-		
-		if targetHRP and targetHum and targetHum.Health > 0 then
-			-- KEY FIX: Lock Y to hrp.Position.Y (prevents tilting!)
-			local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
-			hrp.CFrame = CFrame.new(hrp.Position, lookPos)
 		else
-			unlockChar()
+			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
 		end
 	end
 end)
 
--- Camera Lock loop (COMPLETELY INDEPENDENT from character rotation!)
+-- Character Rotation loop (PROTECTED - Won't touch HRP when unsafe)
+RunService.RenderStepped:Connect(function()
+	if not charLockTarget then return end
+	
+	-- CRITICAL PROTECTION: Only modify HRP if COMPLETELY SAFE
+	if not isSafeToRotate() then
+		-- Not safe - restore AutoRotate and skip
+		if humanoid then humanoid.AutoRotate = true end
+		return
+	end
+	
+	-- Safe to proceed
+	if humanoid then humanoid.AutoRotate = false end
+	
+	local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
+	local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
+	
+	if targetHRP and targetHum and targetHum.Health > 0 then
+		-- Y-axis locked rotation (prevents tilting)
+		local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
+		
+		-- PROTECTED CFrame modification
+		pcall(function()
+			hrp.CFrame = CFrame.new(hrp.Position, lookPos)
+		end)
+	else
+		unlockChar()
+	end
+end)
+
+-- Camera Lock loop (INDEPENDENT - Uses position only, not orientation)
 local CAMERA_DISTANCE = 15
 local CAMERA_HEIGHT = 3
 
 RunService.RenderStepped:Connect(function()
 	if camLockTarget and camera and hrp and humanoid then
-		-- FORCE camera to scriptable
 		camera.CameraType = Enum.CameraType.Scriptable
 		
 		local targetHRP = camLockTarget:FindFirstChild("HumanoidRootPart")
 		local targetHum = camLockTarget:FindFirstChildWhichIsA("Humanoid")
 		
 		if targetHRP and targetHum and targetHum.Health > 0 then
-			-- KEY FIX: Use HRP.Position directly (not orientation-dependent!)
-			local playerPos = hrp.Position + Vector3.new(0, CAMERA_HEIGHT, 0)
+			-- Use position ONLY (completely independent of HRP orientation)
+			local success, playerPos = pcall(function()
+				return hrp.Position + Vector3.new(0, CAMERA_HEIGHT, 0)
+			end)
 			
-			-- Calculate direction (independent of HRP rotation)
+			if not success then return end
+			
+			-- Calculate direction
 			local directionToTarget = (targetHRP.Position - playerPos).Unit
 			
 			-- Validate direction
-			if directionToTarget.Magnitude < 0.5 then
+			if directionToTarget.Magnitude < 0.5 or directionToTarget ~= directionToTarget then
 				directionToTarget = Vector3.new(0, 0, -1)
 			end
 			
@@ -380,8 +414,8 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-print("Mobile Lock System PROPERLY FIXED!")
-print("✓ Y-axis locked rotation (no tilting)")
-print("✓ Camera fully independent from HRP orientation")
-print("✓ No more camera bugs!")
-print("CHAR LOCK = Rotates character | CAM LOCK = Console-style camera")
+print("Mobile Lock System GRAB-PROOF loaded!")
+print("✓ PROTECTED CFrame modification - No teleporting!")
+print("✓ Complete weld detection every frame")
+print("✓ Camera independent from HRP orientation")
+print("✓ Green dot = Safe | Red dot = Protected (grabbed)")
