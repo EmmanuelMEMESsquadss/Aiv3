@@ -1,5 +1,5 @@
 -- LocalScript (StarterPlayerScripts)
--- Mobile Lock-On + Camlock System (SMART DETECTION)
+-- Mobile Lock-On + Camlock System - RAGDOLL FIX
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -13,31 +13,6 @@ end
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local character, humanoid, hrp
-local isDisabled = false
-
--- DEBUG: Track what's blocking rotation
-local blockReason = ""
-
--- SMART: Only detect GRAB constraints (not normal character parts)
-local function hasGrabConstraint()
-	if not hrp then return false end
-	
-	-- Only check for constraints that GRABS add (not normal Motor6Ds)
-	for _, child in ipairs(hrp:GetChildren()) do
-		-- These are ONLY added by grabs, never by normal character
-		if child:IsA("Weld") or 
-		   child:IsA("WeldConstraint") or 
-		   child:IsA("AlignPosition") or 
-		   child:IsA("AlignOrientation") or 
-		   child:IsA("RopeConstraint") or
-		   child:IsA("BallSocketConstraint") then
-			blockReason = "Grab detected: " .. child.ClassName
-			return true
-		end
-	end
-	
-	return false
-end
 
 local function setupCharacter(char)
 	character = char
@@ -45,68 +20,43 @@ local function setupCharacter(char)
 	hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
 	
 	if humanoid then 
-		humanoid.AutoRotate = true 
-		
-		-- Detect ragdoll/grab through state changes
-		humanoid.StateChanged:Connect(function(oldState, newState)
-			if newState == Enum.HumanoidStateType.Physics or 
-			   newState == Enum.HumanoidStateType.Ragdoll or
-			   newState == Enum.HumanoidStateType.FallingDown or
-			   newState == Enum.HumanoidStateType.PlatformStanding then
-				isDisabled = true
-				blockReason = "State: " .. tostring(newState)
-			elseif newState == Enum.HumanoidStateType.Running or
-			       newState == Enum.HumanoidStateType.Landed or
-			       newState == Enum.HumanoidStateType.Jumping then
-				isDisabled = false
-				blockReason = ""
-			end
-		end)
-		
-		-- Detect PlatformStand changes (common grab method)
-		humanoid:GetPropertyChangedSignal("PlatformStand"):Connect(function()
-			if humanoid.PlatformStand then
-				isDisabled = true
-				blockReason = "PlatformStand"
-			else
-				isDisabled = false
-				blockReason = ""
-			end
-		end)
-		
-		-- Detect Sit changes (some grabs use this)
-		humanoid:GetPropertyChangedSignal("Sit"):Connect(function()
-			if humanoid.Sit then
-				isDisabled = true
-				blockReason = "Sit"
-			end
-		end)
-	end
-	
-	-- Monitor for welds/constraints added to HRP (grab detection)
-	if hrp then
-		hrp.ChildAdded:Connect(function(child)
-			if child:IsA("Weld") or child:IsA("WeldConstraint") or 
-			   child:IsA("AlignPosition") or child:IsA("AlignOrientation") or 
-			   child:IsA("RopeConstraint") then
-				isDisabled = true
-				blockReason = "Constraint added: " .. child.ClassName
-				
-				-- Re-enable when constraint is removed
-				child.AncestryChanged:Connect(function()
-					if not child:IsDescendantOf(game) then
-						task.wait(0.5)
-						isDisabled = false
-						blockReason = ""
-					end
-				end)
-			end
-		end)
+		humanoid.AutoRotate = true
 	end
 end
 
 if player.Character then setupCharacter(player.Character) end
 player.CharacterAdded:Connect(setupCharacter)
+
+-- NEW: Real-time state checking (runs every frame - NO LAG)
+local function isCharacterDisabled()
+	if not humanoid or humanoid.Health <= 0 then return true end
+	
+	-- Check state directly (no waiting for events)
+	local state = humanoid:GetState()
+	if state == Enum.HumanoidStateType.Physics or 
+	   state == Enum.HumanoidStateType.Ragdoll or
+	   state == Enum.HumanoidStateType.FallingDown or
+	   state == Enum.HumanoidStateType.PlatformStanding then
+		return true
+	end
+	
+	-- Check properties directly
+	if humanoid.PlatformStand or humanoid.Sit then
+		return true
+	end
+	
+	-- Check for constraint-based grabs
+	if hrp then
+		for _, child in ipairs(hrp:GetChildren()) do
+			if child:IsA("Weld") or child:IsA("WeldConstraint") or 
+			   child:IsA("AlignPosition") or child:IsA("AlignOrientation") then
+				return true
+			end
+		end
+	end
+	
+	return false
+end
 
 -- GUI
 local gui = Instance.new("ScreenGui")
@@ -142,22 +92,6 @@ local charDotCorner = Instance.new("UICorner")
 charDotCorner.CornerRadius = UDim.new(0.5, 0)
 charDotCorner.Parent = charDot
 
--- DEBUG Label (shows what's blocking)
-local debugLabel = Instance.new("TextLabel")
-debugLabel.Size = UDim2.new(0, 250, 0, 30)
-debugLabel.Position = UDim2.new(0.06, 0, 0.75, 0)
-debugLabel.Text = "Status: Ready"
-debugLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-debugLabel.TextColor3 = Color3.new(1, 1, 1)
-debugLabel.Font = Enum.Font.Gotham
-debugLabel.TextSize = 12
-debugLabel.TextXAlignment = Enum.TextXAlignment.Left
-debugLabel.Parent = gui
-
-local debugCorner = Instance.new("UICorner")
-debugCorner.CornerRadius = UDim.new(0, 6)
-debugCorner.Parent = debugLabel
-
 -- Camlock Button
 local camLockBtn = Instance.new("TextButton")
 camLockBtn.Size = UDim2.new(0, 110, 0, 50)
@@ -182,8 +116,6 @@ local function updateDrag(input)
 		startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 	camLockBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X + 120,
 		startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-	debugLabel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
-		startPos.Y.Scale - 0.05, startPos.Y.Offset + delta.Y)
 end
 
 charLockBtn.InputBegan:Connect(function(input)
@@ -296,7 +228,6 @@ local function unlockCam()
 	camLockBtn.Text = "CAM LOCK"
 	camLockBtn.BackgroundColor3 = Color3.fromRGB(206, 137, 36)
 	if not charLockTarget then detachBillboard() end
-	-- Restore camera to normal
 	if camera then
 		camera.CameraType = Enum.CameraType.Custom
 		if humanoid then
@@ -350,72 +281,39 @@ camLockBtn.Activated:Connect(function()
 	end
 end)
 
--- Update status indicator and debug
+-- Update status indicator
 spawn(function()
 	while true do
 		wait(0.1)
-		
-		-- Update dot color
-		if isDisabled or hasGrabConstraint() then
+		if isCharacterDisabled() then
 			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
 		else
 			charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
 		end
-		
-		-- Update debug label
-		if charLockTarget then
-			if isDisabled or hasGrabConstraint() then
-				debugLabel.Text = "⚠️ PAUSED: " .. blockReason
-				debugLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-			else
-				debugLabel.Text = "✓ Locking: Active"
-				debugLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-			end
-		else
-			debugLabel.Text = "Status: Ready"
-			debugLabel.TextColor3 = Color3.new(1, 1, 1)
-		end
 	end
 end)
 
--- Character Rotation loop (SIMPLIFIED & PROTECTED)
+-- Character Rotation loop (FIXED - NO MORE TELEPORT BUGS!)
 RunService.RenderStepped:Connect(function()
-	if not charLockTarget or not hrp or not humanoid then return end
-	if humanoid.Health <= 0 then return end
-	
-	-- Check if we should skip this frame
-	local shouldSkip = isDisabled or humanoid.PlatformStand or humanoid.Sit or hasGrabConstraint()
-	
-	if shouldSkip then
-		-- Restore AutoRotate when skipping
-		if humanoid then humanoid.AutoRotate = true end
-		return
-	end
-	
-	-- Safe to rotate
-	if humanoid then humanoid.AutoRotate = false end
-	
-	local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
-	local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
-	
-	if targetHRP and targetHum and targetHum.Health > 0 then
-		-- Y-axis locked (no tilting)
-		local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
-		
-		-- Protected modification with pcall
-		local success = pcall(function()
-			hrp.CFrame = CFrame.new(hrp.Position, lookPos)
-		end)
-		
-		if not success then
-			blockReason = "CFrame error (network ownership?)"
+	if charLockTarget and hrp and humanoid and humanoid.Health > 0 then
+		-- Check state EVERY FRAME instead of relying on slow event triggers
+		if isCharacterDisabled() then
+			return
 		end
-	else
-		unlockChar()
+		
+		local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
+		local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
+		
+		if targetHRP and targetHum and targetHum.Health > 0 then
+			local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
+			hrp.CFrame = CFrame.new(hrp.Position, lookPos)
+		else
+			unlockChar()
+		end
 	end
 end)
 
--- Camera Lock loop (INDEPENDENT)
+-- Camera Lock loop
 local CAMERA_DISTANCE = 15
 local CAMERA_HEIGHT = 3
 
@@ -427,35 +325,21 @@ RunService.RenderStepped:Connect(function()
 		local targetHum = camLockTarget:FindFirstChildWhichIsA("Humanoid")
 		
 		if targetHRP and targetHum and targetHum.Health > 0 then
-			-- Use position only (not orientation)
 			local playerPos = hrp.Position + Vector3.new(0, CAMERA_HEIGHT, 0)
-			
-			-- Calculate direction
 			local directionToTarget = (targetHRP.Position - playerPos).Unit
-			
-			-- Validate
-			if directionToTarget.Magnitude < 0.5 or directionToTarget ~= directionToTarget then
-				directionToTarget = Vector3.new(0, 0, -1)
-			end
-			
-			-- Position camera
 			local cameraPosition = playerPos - (directionToTarget * CAMERA_DISTANCE)
 			local targetLook = CFrame.new(cameraPosition, targetHRP.Position)
-			
 			camera.CFrame = camera.CFrame:Lerp(targetLook, 0.2)
 		else
 			unlockCam()
 		end
 	end
 	
-	-- Restore when not locked
 	if not camLockTarget and camera.CameraType == Enum.CameraType.Scriptable then
 		camera.CameraType = Enum.CameraType.Custom
 		camera.CameraSubject = humanoid
 	end
 end)
 
-print("Mobile Lock System with SMART DETECTION loaded!")
-print("✓ Watch the status label to see what's happening")
-print("✓ Green dot = Working | Red dot = Paused (grab detected)")
-print("✓ Charlock pauses during grabs, resumes after")
+print("Mobile Lock System FIXED - Ragdoll detection lag eliminated!")
+print("CHAR LOCK = Rotates character | CAM LOCK = Console-style camera")
