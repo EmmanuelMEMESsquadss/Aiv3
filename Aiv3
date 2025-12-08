@@ -1,5 +1,5 @@
 -- LocalScript (StarterPlayerScripts)
--- Mobile Lock-On + Camlock System - RAGDOLL FIX
+-- Mobile Lock-On + Camlock System - OPTIMIZED FIX
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -27,32 +27,21 @@ end
 if player.Character then setupCharacter(player.Character) end
 player.CharacterAdded:Connect(setupCharacter)
 
--- NEW: Real-time state checking (runs every frame - NO LAG)
+-- FIXED: Only check critical ragdoll states
 local function isCharacterDisabled()
-	if not humanoid or humanoid.Health <= 0 then return true end
+	if not humanoid then return true end
+	if humanoid.Health <= 0 then return true end
 	
-	-- Check state directly (no waiting for events)
+	-- Only block rotation during actual ragdoll/physics states
 	local state = humanoid:GetState()
 	if state == Enum.HumanoidStateType.Physics or 
-	   state == Enum.HumanoidStateType.Ragdoll or
-	   state == Enum.HumanoidStateType.FallingDown or
-	   state == Enum.HumanoidStateType.PlatformStanding then
+	   state == Enum.HumanoidStateType.Ragdoll then
 		return true
 	end
 	
-	-- Check properties directly
-	if humanoid.PlatformStand or humanoid.Sit then
+	-- Check PlatformStand (primary grab detection)
+	if humanoid.PlatformStand then
 		return true
-	end
-	
-	-- Check for constraint-based grabs
-	if hrp then
-		for _, child in ipairs(hrp:GetChildren()) do
-			if child:IsA("Weld") or child:IsA("WeldConstraint") or 
-			   child:IsA("AlignPosition") or child:IsA("AlignOrientation") then
-				return true
-			end
-		end
 	end
 	
 	return false
@@ -281,10 +270,10 @@ camLockBtn.Activated:Connect(function()
 	end
 end)
 
--- Update status indicator
+-- Update status indicator (less frequent checks)
 spawn(function()
 	while true do
-		wait(0.1)
+		wait(0.15)
 		if isCharacterDisabled() then
 			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
 		else
@@ -293,23 +282,25 @@ spawn(function()
 	end
 end)
 
--- Character Rotation loop (FIXED - NO MORE TELEPORT BUGS!)
+-- Character Rotation loop (FIXED + OPTIMIZED)
 RunService.RenderStepped:Connect(function()
-	if charLockTarget and hrp and humanoid and humanoid.Health > 0 then
-		-- Check state EVERY FRAME instead of relying on slow event triggers
-		if isCharacterDisabled() then
-			return
-		end
-		
-		local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
-		local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
-		
-		if targetHRP and targetHum and targetHum.Health > 0 then
-			local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
-			hrp.CFrame = CFrame.new(hrp.Position, lookPos)
-		else
-			unlockChar()
-		end
+	if not charLockTarget then return end
+	if not hrp or not humanoid then return end
+	if humanoid.Health <= 0 then return end
+	
+	-- Fast ragdoll check BEFORE any CFrame manipulation
+	if isCharacterDisabled() then
+		return
+	end
+	
+	local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
+	local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
+	
+	if targetHRP and targetHum and targetHum.Health > 0 then
+		local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
+		hrp.CFrame = CFrame.new(hrp.Position, lookPos)
+	else
+		unlockChar()
 	end
 end)
 
@@ -341,5 +332,5 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-print("Mobile Lock System FIXED - Ragdoll detection lag eliminated!")
+print("Mobile Lock System - Optimized ragdoll detection active!")
 print("CHAR LOCK = Rotates character | CAM LOCK = Console-style camera")
