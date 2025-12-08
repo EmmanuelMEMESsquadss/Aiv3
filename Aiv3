@@ -13,39 +13,61 @@ end
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local character, humanoid, hrp
+local isRagdolled = false -- INSTANT FLAG
 
 local function setupCharacter(char)
 	character = char
 	humanoid = char:WaitForChild("Humanoid")
 	hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
+	isRagdolled = false
 	
 	if humanoid then 
 		humanoid.AutoRotate = true
+		
+		-- INSTANT: Flag set immediately when state changes
+		humanoid.StateChanged:Connect(function(oldState, newState)
+			if newState == Enum.HumanoidStateType.Physics or 
+			   newState == Enum.HumanoidStateType.Ragdoll then
+				isRagdolled = true
+			elseif newState == Enum.HumanoidStateType.Running or
+			       newState == Enum.HumanoidStateType.Landed or
+			       newState == Enum.HumanoidStateType.Jumping or
+			       newState == Enum.HumanoidStateType.Freefall then
+				isRagdolled = false
+			end
+		end)
+		
+		-- INSTANT: Detect PlatformStand (grabs)
+		humanoid:GetPropertyChangedSignal("PlatformStand"):Connect(function()
+			if humanoid.PlatformStand then
+				isRagdolled = true
+			else
+				task.wait(0.1) -- Small delay for recovery
+				isRagdolled = false
+			end
+		end)
+	end
+	
+	-- INSTANT: Detect constraint-based grabs
+	if hrp then
+		hrp.ChildAdded:Connect(function(child)
+			if child:IsA("Weld") or child:IsA("WeldConstraint") or 
+			   child:IsA("AlignPosition") or child:IsA("AlignOrientation") then
+				isRagdolled = true
+				
+				child.AncestryChanged:Connect(function()
+					if not child:IsDescendantOf(game) then
+						task.wait(0.2)
+						isRagdolled = false
+					end
+				end)
+			end
+		end)
 	end
 end
 
 if player.Character then setupCharacter(player.Character) end
 player.CharacterAdded:Connect(setupCharacter)
-
--- FIXED: Only check critical ragdoll states
-local function isCharacterDisabled()
-	if not humanoid then return true end
-	if humanoid.Health <= 0 then return true end
-	
-	-- Only block rotation during actual ragdoll/physics states
-	local state = humanoid:GetState()
-	if state == Enum.HumanoidStateType.Physics or 
-	   state == Enum.HumanoidStateType.Ragdoll then
-		return true
-	end
-	
-	-- Check PlatformStand (primary grab detection)
-	if humanoid.PlatformStand then
-		return true
-	end
-	
-	return false
-end
 
 -- GUI
 local gui = Instance.new("ScreenGui")
@@ -270,11 +292,11 @@ camLockBtn.Activated:Connect(function()
 	end
 end)
 
--- Update status indicator (less frequent checks)
+-- Update status indicator (uses instant flag)
 spawn(function()
 	while true do
 		wait(0.15)
-		if isCharacterDisabled() then
+		if isRagdolled or not humanoid or humanoid.Health <= 0 then
 			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
 		else
 			charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
@@ -282,14 +304,14 @@ spawn(function()
 	end
 end)
 
--- Character Rotation loop (FIXED + OPTIMIZED)
+-- Character Rotation loop (INSTANT RAGDOLL DETECTION)
 RunService.RenderStepped:Connect(function()
 	if not charLockTarget then return end
 	if not hrp or not humanoid then return end
 	if humanoid.Health <= 0 then return end
 	
-	-- Fast ragdoll check BEFORE any CFrame manipulation
-	if isCharacterDisabled() then
+	-- INSTANT CHECK: Just read the flag (no function call overhead)
+	if isRagdolled then
 		return
 	end
 	
@@ -332,5 +354,6 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-print("Mobile Lock System - Optimized ragdoll detection active!")
+print("Mobile Lock System - INSTANT ragdoll protection active!")
 print("CHAR LOCK = Rotates character | CAM LOCK = Console-style camera")
+print("Ragdoll detection: Event-based (0ms delay)")
