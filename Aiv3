@@ -1,5 +1,5 @@
 -- LocalScript (StarterPlayerScripts)
--- Mobile Lock-On + Camlock System - OPTIMIZED FIX
+-- Mobile Lock-On + Camlock System - ATTACHMENT DETECTION FIX
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -13,93 +13,85 @@ end
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local character, humanoid, hrp
-local isRagdolled = false
-local lastPosition = nil
-local lastVelocity = Vector3.new(0, 0, 0)
-local suspicionFrames = 0 -- Count suspicious frames before blocking
+local isGrabbed = false
+local grabAttachmentCount = 0
 
 local function setupCharacter(char)
 	character = char
 	humanoid = char:WaitForChild("Humanoid")
 	hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
-	isRagdolled = false
-	lastPosition = nil
-	lastVelocity = Vector3.new(0, 0, 0)
-	suspicionFrames = 0
+	isGrabbed = false
+	grabAttachmentCount = 0
 	
 	if humanoid then 
 		humanoid.AutoRotate = true
 		
-		-- INSTANT: Flag set immediately when state changes
+		-- State detection
 		humanoid.StateChanged:Connect(function(oldState, newState)
 			if newState == Enum.HumanoidStateType.Physics or 
 			   newState == Enum.HumanoidStateType.Ragdoll then
-				isRagdolled = true
-				suspicionFrames = 0
+				isGrabbed = true
 			elseif newState == Enum.HumanoidStateType.Running or
 			       newState == Enum.HumanoidStateType.Landed or
-			       newState == Enum.HumanoidStateType.Jumping or
-			       newState == Enum.HumanoidStateType.Freefall then
-				isRagdolled = false
-				suspicionFrames = 0
+			       newState == Enum.HumanoidStateType.Jumping then
+				-- Don't auto-clear here, let attachment check handle it
 			end
 		end)
 		
-		-- INSTANT: Detect PlatformStand (grabs)
 		humanoid:GetPropertyChangedSignal("PlatformStand"):Connect(function()
 			if humanoid.PlatformStand then
-				isRagdolled = true
-				suspicionFrames = 0
-			else
-				task.wait(0.1)
-				isRagdolled = false
-				suspicionFrames = 0
-			end
-		end)
-		
-		-- DETECT: When YOU are grabbing someone (AutoRotate disabled by grab script)
-		humanoid:GetPropertyChangedSignal("AutoRotate"):Connect(function()
-			if not humanoid.AutoRotate and charLockTarget then
-				-- Another script disabled AutoRotate (likely a grab)
-				isRagdolled = true
-				task.wait(0.3)
-				-- Re-check after delay
-				if humanoid and not humanoid.AutoRotate then
-					isRagdolled = false
-					humanoid.AutoRotate = false -- Keep it off for our lock
-				end
+				isGrabbed = true
 			end
 		end)
 	end
 	
-	-- INSTANT: Detect constraint-based grabs
+	-- CRITICAL: Monitor for AlignPosition attachments (THE KEY TO GRAB DETECTION!)
 	if hrp then
+		-- Track initial attachment count
+		for _, child in ipairs(hrp:GetChildren()) do
+			if child:IsA("Attachment") then
+				grabAttachmentCount = grabAttachmentCount + 1
+			end
+		end
+		
+		-- Detect NEW attachments being added (grab system)
 		hrp.ChildAdded:Connect(function(child)
-			if child:IsA("Weld") or child:IsA("WeldConstraint") or 
-			   child:IsA("AlignPosition") or child:IsA("AlignOrientation") or
-			   child:IsA("BodyPosition") or child:IsA("BodyGyro") then
-				isRagdolled = true
-				suspicionFrames = 0
+			if child:IsA("Attachment") then
+				-- New attachment = likely being grabbed
+				isGrabbed = true
+				grabAttachmentCount = grabAttachmentCount + 1
+				
+				-- Monitor for its removal
+				child.AncestryChanged:Connect(function()
+					if not child:IsDescendantOf(game) then
+						grabAttachmentCount = math.max(0, grabAttachmentCount - 1)
+						task.wait(0.15)
+						-- Only clear if no more grab attachments exist
+						if grabAttachmentCount == 0 then
+							isGrabbed = false
+						end
+					end
+				end)
+			elseif child:IsA("AlignPosition") or child:IsA("AlignOrientation") then
+				-- Direct constraint detection
+				isGrabbed = true
 				
 				child.AncestryChanged:Connect(function()
 					if not child:IsDescendantOf(game) then
-						task.wait(0.2)
-						isRagdolled = false
-						suspicionFrames = 0
+						task.wait(0.15)
+						isGrabbed = false
 					end
 				end)
-			end
-		end)
-		
-		-- DETECT: HRP Anchored (some grabs use this)
-		hrp:GetPropertyChangedSignal("Anchored"):Connect(function()
-			if hrp.Anchored then
-				isRagdolled = true
-				suspicionFrames = 0
-			else
-				task.wait(0.1)
-				isRagdolled = false
-				suspicionFrames = 0
+			elseif child:IsA("Weld") or child:IsA("WeldConstraint") or 
+			       child:IsA("BodyPosition") or child:IsA("BodyGyro") then
+				isGrabbed = true
+				
+				child.AncestryChanged:Connect(function()
+					if not child:IsDescendantOf(game) then
+						task.wait(0.15)
+						isGrabbed = false
+					end
+				end)
 			end
 		end)
 	end
@@ -130,7 +122,7 @@ local charCorner = Instance.new("UICorner")
 charCorner.CornerRadius = UDim.new(0, 8)
 charCorner.Parent = charLockBtn
 
--- Status indicator for character lock
+-- Status indicator
 local charDot = Instance.new("Frame")
 charDot.Size = UDim2.new(0, 8, 0, 8)
 charDot.Position = UDim2.new(1, -12, 0, 4)
@@ -158,7 +150,7 @@ local camCorner = Instance.new("UICorner")
 camCorner.CornerRadius = UDim.new(0, 8)
 camCorner.Parent = camLockBtn
 
--- Draggable (both buttons move together)
+-- Draggable
 local dragging, dragInput, dragStart, startPos
 local function updateDrag(input)
 	local delta = input.Position - dragStart
@@ -286,7 +278,6 @@ local function unlockCam()
 	end
 end
 
--- Character Lock Button
 charLockBtn.Activated:Connect(function()
 	if charLockTarget then
 		unlockChar()
@@ -309,7 +300,6 @@ charLockBtn.Activated:Connect(function()
 	end
 end)
 
--- Camlock Button
 camLockBtn.Activated:Connect(function()
 	if camLockTarget then
 		unlockCam()
@@ -331,11 +321,11 @@ camLockBtn.Activated:Connect(function()
 	end
 end)
 
--- Update status indicator (uses instant flag)
+-- Status indicator
 spawn(function()
 	while true do
-		wait(0.15)
-		if isRagdolled or not humanoid or humanoid.Health <= 0 then
+		wait(0.1)
+		if isGrabbed or not humanoid or humanoid.Health <= 0 then
 			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
 		else
 			charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
@@ -343,112 +333,38 @@ spawn(function()
 	end
 end)
 
--- Character Rotation loop (ADVANCED MULTI-LAYER PROTECTION)
+-- Character Rotation loop (ATTACHMENT-AWARE)
 RunService.RenderStepped:Connect(function()
-	if not charLockTarget then 
-		suspicionFrames = 0
-		return 
-	end
+	if not charLockTarget then return end
 	if not hrp or not humanoid then return end
 	if humanoid.Health <= 0 then return end
 	
-	-- LAYER 1: Event-based flag check
-	if isRagdolled then
-		suspicionFrames = 0
+	-- Primary check: Grab flag
+	if isGrabbed then
 		return
 	end
 	
-	-- LAYER 2: Real-time constraint/weld check (catches instant grabs)
-	local hasConstraint = false
-	local weldToPlayer = false
-	
+	-- Secondary check: Real-time attachment verification
+	local attachmentCount = 0
 	for _, child in ipairs(hrp:GetChildren()) do
-		if child:IsA("Weld") or child:IsA("WeldConstraint") then
-			hasConstraint = true
-			-- Check if welded to another PLAYER (being grabbed)
-			if child:IsA("Weld") and child.Part1 then
-				local weldedModel = child.Part1.Parent
-				if weldedModel and Players:GetPlayerFromCharacter(weldedModel) then
-					weldToPlayer = true
-				end
-			elseif child:IsA("WeldConstraint") then
-				if child.Part1 and child.Part1.Parent then
-					local weldedModel = child.Part1.Parent
-					if Players:GetPlayerFromCharacter(weldedModel) then
-						weldToPlayer = true
-					end
-				end
-			end
-		elseif child:IsA("AlignPosition") or child:IsA("AlignOrientation") or
-		       child:IsA("RopeConstraint") or child:IsA("BodyPosition") or 
-		       child:IsA("BodyGyro") then
-			hasConstraint = true
+		if child:IsA("Attachment") then
+			attachmentCount = attachmentCount + 1
 		end
 	end
 	
-	if weldToPlayer or hasConstraint then
-		isRagdolled = true -- Update flag
-		suspicionFrames = 0
+	-- If attachment count increased = being grabbed
+	if attachmentCount > grabAttachmentCount then
+		isGrabbed = true
+		grabAttachmentCount = attachmentCount
 		return
 	end
 	
-	-- LAYER 3: HRP Anchored check
-	if hrp.Anchored then
-		isRagdolled = true
-		suspicionFrames = 0
+	-- Tertiary check: PlatformStand or Anchored
+	if humanoid.PlatformStand or hrp.Anchored then
 		return
 	end
 	
-	-- LAYER 4: Velocity spike detection (smarter - requires 2 consecutive frames)
-	if hrp:FindFirstChild("RootJoint") then
-		local currentVelocity = hrp.AssemblyLinearVelocity
-		local velocityChange = (currentVelocity - lastVelocity).Magnitude
-		
-		-- High velocity change = potential grab
-		if velocityChange > 40 then
-			suspicionFrames = suspicionFrames + 1
-			if suspicionFrames >= 2 then -- 2 frames of high velocity = confirmed grab
-				lastVelocity = currentVelocity
-				return
-			end
-		else
-			suspicionFrames = math.max(0, suspicionFrames - 1) -- Decay suspicion
-		end
-		lastVelocity = currentVelocity
-	end
-	
-	-- LAYER 5: Position displacement check (teleport detection)
-	if lastPosition then
-		local displacement = (hrp.Position - lastPosition).Magnitude
-		-- Moved 8+ studs in one frame = grabbed/teleported
-		if displacement > 8 then
-			suspicionFrames = suspicionFrames + 1
-			if suspicionFrames >= 2 then
-				lastPosition = hrp.Position
-				return
-			end
-		else
-			suspicionFrames = math.max(0, suspicionFrames - 1)
-		end
-	end
-	lastPosition = hrp.Position
-	
-	-- LAYER 6: Animation check (detect grab animations)
-	if humanoid.Animator then
-		local animator = humanoid.Animator
-		for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-			local animName = track.Name:lower()
-			-- Common grab animation names
-			if animName:find("grab") or animName:find("hold") or 
-			   animName:find("carry") or animName:find("throw") then
-				suspicionFrames = 0
-				return
-			end
-		end
-	end
-	
-	-- ALL CHECKS PASSED - Safe to rotate
-	suspicionFrames = 0
+	-- Safe to rotate
 	local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
 	local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
 	
@@ -488,10 +404,8 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-print("Mobile Lock System - ADVANCED GRAB DETECTION ACTIVE!")
+print("Mobile Lock System - ATTACHMENT DETECTION ACTIVE!")
 print("CHAR LOCK = Rotates character | CAM LOCK = Console-style camera")
-print("Protection Layers:")
-print("✓ Event flags | ✓ Real-time welds to players | ✓ Anchor detection")
-print("✓ Velocity spikes | ✓ Position teleports | ✓ Grab animations")
-print("✓ BodyMovers | ✓ AutoRotate hijack detection")
-print("Suspicion system prevents false positives from normal movement")
+print("Protection: Attachment monitoring (AlignPosition grab detection)")
+print("Detects: Attachments, AlignPosition, Welds, BodyMovers, PlatformStand")
+print("This solves the battlegrounds grab animation bug!")
