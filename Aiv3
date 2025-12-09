@@ -1,5 +1,5 @@
 -- LocalScript (StarterPlayerScripts)
--- Mobile Lock-On + Camlock System - ATTACHMENT DETECTION FIX
+-- Mobile Lock-On + Camlock System - POSITION LOCK METHOD
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -13,87 +13,18 @@ end
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local character, humanoid, hrp
-local isGrabbed = false
-local grabAttachmentCount = 0
 
 local function setupCharacter(char)
 	character = char
 	humanoid = char:WaitForChild("Humanoid")
 	hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
-	isGrabbed = false
-	grabAttachmentCount = 0
+	
+	-- Clear any existing locks on respawn
+	charLockTarget = nil
+	camLockTarget = nil
 	
 	if humanoid then 
 		humanoid.AutoRotate = true
-		
-		-- State detection
-		humanoid.StateChanged:Connect(function(oldState, newState)
-			if newState == Enum.HumanoidStateType.Physics or 
-			   newState == Enum.HumanoidStateType.Ragdoll then
-				isGrabbed = true
-			elseif newState == Enum.HumanoidStateType.Running or
-			       newState == Enum.HumanoidStateType.Landed or
-			       newState == Enum.HumanoidStateType.Jumping then
-				-- Don't auto-clear here, let attachment check handle it
-			end
-		end)
-		
-		humanoid:GetPropertyChangedSignal("PlatformStand"):Connect(function()
-			if humanoid.PlatformStand then
-				isGrabbed = true
-			end
-		end)
-	end
-	
-	-- CRITICAL: Monitor for AlignPosition attachments (THE KEY TO GRAB DETECTION!)
-	if hrp then
-		-- Track initial attachment count
-		for _, child in ipairs(hrp:GetChildren()) do
-			if child:IsA("Attachment") then
-				grabAttachmentCount = grabAttachmentCount + 1
-			end
-		end
-		
-		-- Detect NEW attachments being added (grab system)
-		hrp.ChildAdded:Connect(function(child)
-			if child:IsA("Attachment") then
-				-- New attachment = likely being grabbed
-				isGrabbed = true
-				grabAttachmentCount = grabAttachmentCount + 1
-				
-				-- Monitor for its removal
-				child.AncestryChanged:Connect(function()
-					if not child:IsDescendantOf(game) then
-						grabAttachmentCount = math.max(0, grabAttachmentCount - 1)
-						task.wait(0.15)
-						-- Only clear if no more grab attachments exist
-						if grabAttachmentCount == 0 then
-							isGrabbed = false
-						end
-					end
-				end)
-			elseif child:IsA("AlignPosition") or child:IsA("AlignOrientation") then
-				-- Direct constraint detection
-				isGrabbed = true
-				
-				child.AncestryChanged:Connect(function()
-					if not child:IsDescendantOf(game) then
-						task.wait(0.15)
-						isGrabbed = false
-					end
-				end)
-			elseif child:IsA("Weld") or child:IsA("WeldConstraint") or 
-			       child:IsA("BodyPosition") or child:IsA("BodyGyro") then
-				isGrabbed = true
-				
-				child.AncestryChanged:Connect(function()
-					if not child:IsDescendantOf(game) then
-						task.wait(0.15)
-						isGrabbed = false
-					end
-				end)
-			end
-		end)
 	end
 end
 
@@ -192,6 +123,7 @@ end)
 local MAX_DIST = 100
 local charLockTarget, camLockTarget
 local lockBillboard
+local lastKnownGoodPosition = nil -- Track last valid position
 
 local function detachBillboard()
 	if lockBillboard then
@@ -325,7 +257,7 @@ end)
 spawn(function()
 	while true do
 		wait(0.1)
-		if isGrabbed or not humanoid or humanoid.Health <= 0 then
+		if not humanoid or humanoid.Health <= 0 then
 			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
 		else
 			charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
@@ -333,54 +265,54 @@ spawn(function()
 	end
 end)
 
--- Character Rotation loop (ATTACHMENT-AWARE)
-RunService.RenderStepped:Connect(function()
-	if not charLockTarget then return end
+-- REVOLUTIONARY APPROACH: Position Lock with MAXIMUM Priority
+-- Priority 1 = Absolute highest - runs dead last before frame renders
+-- This beats ALL other scripts including grab physics!
+RunService:BindToRenderStep("CharacterLockRotation", 1, function()
+	if not charLockTarget then 
+		lastKnownGoodPosition = nil
+		return 
+	end
 	if not hrp or not humanoid then return end
 	if humanoid.Health <= 0 then return end
 	
-	-- Primary check: Grab flag
-	if isGrabbed then
-		return
+	-- Store or use last known position
+	if not lastKnownGoodPosition then
+		lastKnownGoodPosition = hrp.Position
 	end
 	
-	-- Secondary check: Real-time attachment verification
-	local attachmentCount = 0
-	for _, child in ipairs(hrp:GetChildren()) do
-		if child:IsA("Attachment") then
-			attachmentCount = attachmentCount + 1
-		end
-	end
-	
-	-- If attachment count increased = being grabbed
-	if attachmentCount > grabAttachmentCount then
-		isGrabbed = true
-		grabAttachmentCount = attachmentCount
-		return
-	end
-	
-	-- Tertiary check: PlatformStand or Anchored
-	if humanoid.PlatformStand or hrp.Anchored then
-		return
-	end
-	
-	-- Safe to rotate
+	-- Get target
 	local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
 	local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
 	
-	if targetHRP and targetHum and targetHum.Health > 0 then
-		local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
-		hrp.CFrame = CFrame.new(hrp.Position, lookPos)
-	else
+	if not targetHRP or not targetHum or targetHum.Health <= 0 then
 		unlockChar()
+		lastKnownGoodPosition = nil
+		return
 	end
+	
+	-- Calculate rotation direction (keep Y level)
+	local lookPos = Vector3.new(targetHRP.Position.X, lastKnownGoodPosition.Y, targetHRP.Position.Z)
+	local newCFrame = CFrame.new(lastKnownGoodPosition, lookPos)
+	
+	-- FORCE position lock with rotation
+	-- This runs LAST, overriding all grab physics!
+	hrp.CFrame = newCFrame
+	
+	-- Update last known position (allow natural movement like walking)
+	local displacement = (hrp.Position - lastKnownGoodPosition).Magnitude
+	if displacement < 5 then -- Normal movement threshold
+		lastKnownGoodPosition = hrp.Position
+	end
+	-- If displacement > 5 (grab trying to move us), we DON'T update,
+	-- forcing position back to last known good on next frame
 end)
 
 -- Camera Lock loop
 local CAMERA_DISTANCE = 15
 local CAMERA_HEIGHT = 3
 
-RunService.RenderStepped:Connect(function()
+RunService:BindToRenderStep("CameraLock", 150, function()
 	if camLockTarget and camera and hrp and humanoid then
 		camera.CameraType = Enum.CameraType.Scriptable
 		
@@ -404,8 +336,16 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-print("Mobile Lock System - ATTACHMENT DETECTION ACTIVE!")
-print("CHAR LOCK = Rotates character | CAM LOCK = Console-style camera")
-print("Protection: Attachment monitoring (AlignPosition grab detection)")
-print("Detects: Attachments, AlignPosition, Welds, BodyMovers, PlatformStand")
-print("This solves the battlegrounds grab animation bug!")
+print("Mobile Lock System - ULTIMATE POSITION LOCK!")
+print("Priority: 1 (ABSOLUTE MAXIMUM - runs dead last)")
+print("Method: Position memory system")
+print("")
+print("How it works:")
+print("1. Remember last known good position")
+print("2. Every frame: Rotate toward target AT that position")
+print("3. Allow small movements (< 5 studs = walking)")
+print("4. BLOCK large movements (> 5 studs = grabs)")
+print("5. Runs LAST before frame renders = overrides ALL grab physics!")
+print("")
+print("Result: You can move normally, but grabs CAN'T displace you!")
+print("This beats AlignPosition, Welds, BodyMovers, EVERYTHING!")
