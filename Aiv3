@@ -1,5 +1,5 @@
 -- LocalScript (StarterPlayerScripts)
--- Mobile Lock-On + Camlock System - POSITION LOCK METHOD
+-- Mobile Lock-On + Camlock System - SMART CONSTRAINT DETECTION
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -19,10 +19,6 @@ local function setupCharacter(char)
 	humanoid = char:WaitForChild("Humanoid")
 	hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
 	
-	-- Clear any existing locks on respawn
-	charLockTarget = nil
-	camLockTarget = nil
-	
 	if humanoid then 
 		humanoid.AutoRotate = true
 	end
@@ -30,6 +26,42 @@ end
 
 if player.Character then setupCharacter(player.Character) end
 player.CharacterAdded:Connect(setupCharacter)
+
+-- Helper function: Check if being grabbed RIGHT NOW
+local function isBeingGrabbed()
+	if not hrp or not humanoid then return true end
+	if humanoid.Health <= 0 then return true end
+	
+	-- Check for active constraints that indicate a grab
+	for _, child in ipairs(hrp:GetChildren()) do
+		-- AlignPosition with Attachment1 = being grabbed
+		if child:IsA("AlignPosition") and child.Attachment1 then
+			return true
+		end
+		-- AlignOrientation paired with AlignPosition
+		if child:IsA("AlignOrientation") and child.Attachment1 then
+			return true
+		end
+		-- BodyPosition/BodyGyro (old-school grabs)
+		if child:IsA("BodyPosition") or child:IsA("BodyGyro") then
+			return true
+		end
+	end
+	
+	-- Check for PlatformStand
+	if humanoid.PlatformStand then
+		return true
+	end
+	
+	-- Check for ragdoll states
+	local state = humanoid:GetState()
+	if state == Enum.HumanoidStateType.Physics or 
+	   state == Enum.HumanoidStateType.Ragdoll then
+		return true
+	end
+	
+	return false
+end
 
 -- GUI
 local gui = Instance.new("ScreenGui")
@@ -123,7 +155,6 @@ end)
 local MAX_DIST = 100
 local charLockTarget, camLockTarget
 local lockBillboard
-local lastKnownGoodPosition = nil -- Track last valid position
 
 local function detachBillboard()
 	if lockBillboard then
@@ -257,7 +288,7 @@ end)
 spawn(function()
 	while true do
 		wait(0.1)
-		if not humanoid or humanoid.Health <= 0 then
+		if isBeingGrabbed() then
 			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
 		else
 			charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
@@ -265,54 +296,34 @@ spawn(function()
 	end
 end)
 
--- REVOLUTIONARY APPROACH: Position Lock with MAXIMUM Priority
--- Priority 1 = Absolute highest - runs dead last before frame renders
--- This beats ALL other scripts including grab physics!
-RunService:BindToRenderStep("CharacterLockRotation", 1, function()
-	if not charLockTarget then 
-		lastKnownGoodPosition = nil
-		return 
-	end
+-- Character Rotation - Simple but with INSTANT grab check
+RunService.RenderStepped:Connect(function()
+	if not charLockTarget then return end
 	if not hrp or not humanoid then return end
 	if humanoid.Health <= 0 then return end
 	
-	-- Store or use last known position
-	if not lastKnownGoodPosition then
-		lastKnownGoodPosition = hrp.Position
+	-- INSTANT CHECK: Is there a grab constraint RIGHT NOW?
+	if isBeingGrabbed() then
+		return -- Don't rotate during grab
 	end
 	
-	-- Get target
+	-- Safe to rotate
 	local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
 	local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
 	
-	if not targetHRP or not targetHum or targetHum.Health <= 0 then
+	if targetHRP and targetHum and targetHum.Health > 0 then
+		local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
+		hrp.CFrame = CFrame.new(hrp.Position, lookPos)
+	else
 		unlockChar()
-		lastKnownGoodPosition = nil
-		return
 	end
-	
-	-- Calculate rotation direction (keep Y level)
-	local lookPos = Vector3.new(targetHRP.Position.X, lastKnownGoodPosition.Y, targetHRP.Position.Z)
-	local newCFrame = CFrame.new(lastKnownGoodPosition, lookPos)
-	
-	-- FORCE position lock with rotation
-	-- This runs LAST, overriding all grab physics!
-	hrp.CFrame = newCFrame
-	
-	-- Update last known position (allow natural movement like walking)
-	local displacement = (hrp.Position - lastKnownGoodPosition).Magnitude
-	if displacement < 5 then -- Normal movement threshold
-		lastKnownGoodPosition = hrp.Position
-	end
-	-- If displacement > 5 (grab trying to move us), we DON'T update,
-	-- forcing position back to last known good on next frame
 end)
 
 -- Camera Lock loop
 local CAMERA_DISTANCE = 15
 local CAMERA_HEIGHT = 3
 
-RunService:BindToRenderStep("CameraLock", 150, function()
+RunService.RenderStepped:Connect(function()
 	if camLockTarget and camera and hrp and humanoid then
 		camera.CameraType = Enum.CameraType.Scriptable
 		
@@ -336,16 +347,10 @@ RunService:BindToRenderStep("CameraLock", 150, function()
 	end
 end)
 
-print("Mobile Lock System - ULTIMATE POSITION LOCK!")
-print("Priority: 1 (ABSOLUTE MAXIMUM - runs dead last)")
-print("Method: Position memory system")
+print("Mobile Lock System - INSTANT CONSTRAINT DETECTION!")
+print("Method: Check for AlignPosition/BodyMovers EVERY FRAME before rotating")
+print("Key: AlignPosition with Attachment1 = being grabbed")
+print("Result: Rotation works normally, blocks ONLY during actual grabs!")
 print("")
-print("How it works:")
-print("1. Remember last known good position")
-print("2. Every frame: Rotate toward target AT that position")
-print("3. Allow small movements (< 5 studs = walking)")
-print("4. BLOCK large movements (> 5 studs = grabs)")
-print("5. Runs LAST before frame renders = overrides ALL grab physics!")
-print("")
-print("Result: You can move normally, but grabs CAN'T displace you!")
-print("This beats AlignPosition, Welds, BodyMovers, EVERYTHING!")
+print("Detects: AlignPosition, AlignOrientation, BodyPosition, BodyGyro, PlatformStand, Ragdoll")
+print("Allows: Normal rotation and movement when NOT grabbed")
