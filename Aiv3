@@ -1,100 +1,493 @@
--- ULTRA SIMPLE GUI TEST - If this doesn't show, your executor is broken
+--[[
+═══════════════════════════════════════════════════════════════════════════════
+    ADAPTIVE UNIVERSAL GAME DUMPER - AI-Like Intelligence
+    
+    ✨ Features:
+    • Auto-detects executor and capabilities
+    • Adapts to available functions (writefile, clipboard, etc.)
+    • Works on ALL executors (Synapse, Arceus X, KRNL, Delta, Fluxus, etc.)
+    • No GUI required - smart console output
+    • Deobfuscation engine
+    • Remote spy system
+    • Asset extraction
+    • Multiple save methods with fallback
+    
+    📦 GitHub Ready - Drop and go!
+    🔧 Self-configuring - Zero manual setup
+═══════════════════════════════════════════════════════════════════════════════
+]]
 
-print("==========================================")
-print("STARTING GUI TEST...")
-print("==========================================")
+local VERSION = "2.0.0"
+local GITHUB_REPO = "https://github.com/YourName/GameDumper"
 
--- Wait for everything
-task.wait(2)
+print("═══════════════════════════════════════════════════════════════")
+print("   ADAPTIVE UNIVERSAL GAME DUMPER v" .. VERSION)
+print("═══════════════════════════════════════════════════════════════")
 
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
+-- ═══════════════════════════════════════════════════════════════════
+-- PHASE 1: ENVIRONMENT DETECTION (AI-LIKE ADAPTATION)
+-- ═══════════════════════════════════════════════════════════════════
 
-print("Player found: " .. tostring(player))
+local Environment = {
+    Executor = "Unknown",
+    Capabilities = {},
+    SavePath = "",
+    IsMobile = false,
+    IsPC = false
+}
 
--- Try BOTH PlayerGui AND CoreGui
-local function tryCreateGUI()
-	-- Method 1: PlayerGui
-	local success1 = pcall(function()
-		local PlayerGui = player:WaitForChild("PlayerGui", 5)
-		
-		local ScreenGui = Instance.new("ScreenGui")
-		ScreenGui.Name = "TESTGUI"
-		ScreenGui.ResetOnSpawn = false
-		ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-		
-		-- BIG OBVIOUS FRAME
-		local Frame = Instance.new("Frame")
-		Frame.Size = UDim2.new(0, 300, 0, 200)
-		Frame.Position = UDim2.new(0.5, -150, 0.5, -100)
-		Frame.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- BRIGHT RED
-		Frame.BorderSizePixel = 5
-		Frame.BorderColor3 = Color3.fromRGB(0, 255, 0) -- GREEN BORDER
-		Frame.Parent = ScreenGui
-		
-		-- BIG TEXT
-		local TextLabel = Instance.new("TextLabel")
-		TextLabel.Size = UDim2.new(1, 0, 1, 0)
-		TextLabel.BackgroundTransparency = 1
-		TextLabel.Text = "GUI WORKING!\n\nIF YOU SEE THIS\nYOUR GUI WORKS!"
-		TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-		TextLabel.Font = Enum.Font.GothamBold
-		TextLabel.TextSize = 24
-		TextLabel.TextWrapped = true
-		TextLabel.Parent = Frame
-		
-		ScreenGui.Parent = PlayerGui
-		print("✅ GUI CREATED IN PLAYERGUI!")
-		return true
-	end)
-	
-	if success1 then return true end
-	
-	-- Method 2: CoreGui
-	print("PlayerGui failed, trying CoreGui...")
-	local success2 = pcall(function()
-		local CoreGui = game:GetService("CoreGui")
-		
-		local ScreenGui = Instance.new("ScreenGui")
-		ScreenGui.Name = "TESTGUI"
-		
-		local Frame = Instance.new("Frame")
-		Frame.Size = UDim2.new(0, 300, 0, 200)
-		Frame.Position = UDim2.new(0.5, -150, 0.5, -100)
-		Frame.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-		Frame.BorderSizePixel = 5
-		Frame.BorderColor3 = Color3.fromRGB(0, 255, 0)
-		Frame.Parent = ScreenGui
-		
-		local TextLabel = Instance.new("TextLabel")
-		TextLabel.Size = UDim2.new(1, 0, 1, 0)
-		TextLabel.BackgroundTransparency = 1
-		TextLabel.Text = "GUI WORKING!\n\nIF YOU SEE THIS\nYOUR GUI WORKS!"
-		TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-		TextLabel.Font = Enum.Font.GothamBold
-		TextLabel.TextSize = 24
-		TextLabel.TextWrapped = true
-		TextLabel.Parent = Frame
-		
-		ScreenGui.Parent = CoreGui
-		print("✅ GUI CREATED IN COREGUI!")
-		return true
-	end)
-	
-	return success2
+-- Detect Executor
+local function detectExecutor()
+    if getexecutorname then
+        return getexecutorname()
+    elseif identifyexecutor then
+        return identifyexecutor()
+    elseif KRNL_LOADED then
+        return "KRNL"
+    elseif syn then
+        return "Synapse X"
+    elseif ARCEUS_LOADED or getrenv().arceus then
+        return "Arceus X"
+    elseif Delta then
+        return "Delta"
+    elseif Fluxus then
+        return "Fluxus"
+    elseif getgenv().Solara then
+        return "Solara"
+    else
+        return "Unknown"
+    end
 end
 
-local result = tryCreateGUI()
-
-if result then
-	print("\n==========================================")
-	print("✅ SUCCESS! GUI IS VISIBLE!")
-	print("==========================================")
-else
-	print("\n==========================================")
-	print("❌ BOTH METHODS FAILED!")
-	print("Your executor might not support GUIs")
-	print("==========================================")
+-- Detect Capabilities (AI-like feature detection)
+local function detectCapabilities()
+    local caps = {
+        writefile = writefile ~= nil,
+        readfile = readfile ~= nil,
+        makefolder = makefolder ~= nil,
+        delfolder = delfolder ~= nil,
+        listfiles = listfiles ~= nil,
+        isfile = isfile ~= nil,
+        isfolder = isfolder ~= nil,
+        setclipboard = setclipboard ~= nil,
+        getgenv = getgenv ~= nil,
+        getsenv = getsenv ~= nil,
+        decompile = decompile ~= nil,
+        saveinstance = saveinstance ~= nil,
+        request = request ~= nil or http_request ~= nil,
+        syn_request = syn and syn.request ~= nil,
+        hookfunction = hookfunction ~= nil or hookmetamethod ~= nil,
+        getconnections = getconnections ~= nil,
+        getcallingscript = getcallingscript ~= nil
+    }
+    
+    return caps
 end
 
-print("\nCheck your screen for a BIG RED BOX!")
+-- Determine save path based on executor
+local function determineSavePath()
+    local executor = Environment.Executor
+    
+    -- Known executor paths
+    local paths = {
+        ["Synapse X"] = "workspace/",
+        ["Arceus X"] = "/storage/emulated/0/Arceus X/Workspace/",
+        ["KRNL"] = "workspace/",
+        ["Delta"] = "workspace/",
+        ["Fluxus"] = "workspace/",
+        ["Solara"] = "workspace/",
+        ["Unknown"] = ""
+    }
+    
+    return paths[executor] or ""
+end
+
+-- Initialize environment
+Environment.Executor = detectExecutor()
+Environment.Capabilities = detectCapabilities()
+Environment.SavePath = determineSavePath()
+Environment.IsMobile = game:GetService("UserInputService").TouchEnabled
+Environment.IsPC = not Environment.IsMobile
+
+print("\n🔍 ENVIRONMENT DETECTION:")
+print("├─ Executor: " .. Environment.Executor)
+print("├─ Platform: " .. (Environment.IsMobile and "Mobile" or "PC"))
+print("├─ Save Path: " .. (Environment.SavePath ~= "" and Environment.SavePath or "Auto-detect"))
+print("└─ Capabilities Detected:")
+
+for cap, available in pairs(Environment.Capabilities) do
+    if available then
+        print("   ✅ " .. cap)
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- PHASE 2: DATA COLLECTION ENGINE
+-- ═══════════════════════════════════════════════════════════════════
+
+local GameData = {
+    Info = {
+        PlaceId = game.PlaceId,
+        GameId = game.GameId,
+        Name = game.Name or "Unknown",
+        CreatorId = game.CreatorId,
+        JobId = game.JobId
+    },
+    Scripts = {},
+    Modules = {},
+    Remotes = {},
+    RemoteCalls = {},
+    Assets = {},
+    Stats = {Scripts = 0, Modules = 0, Remotes = 0, Assets = 0, Calls = 0}
+}
+
+-- Deobfuscation Engine
+local function deobfuscate(source)
+    if not source or source == "" then return source, false end
+    
+    local cleaned = source
+    local isObf = false
+    
+    -- Detect obfuscation markers
+    if cleaned:find("getfenv") or cleaned:find("loadstring") or
+       cleaned:find("string%.char") or cleaned:find("byte%(") or
+       cleaned:find("xor") or cleaned:find("bit32") then
+        isObf = true
+    end
+    
+    -- Clean common patterns
+    cleaned = cleaned:gsub('""%.%.""', '')
+    cleaned = cleaned:gsub("''%.%.''", '')
+    cleaned = cleaned:gsub('0x(%x+)', function(h) 
+        return tostring(tonumber(h, 16)) 
+    end)
+    cleaned = cleaned:gsub('\\(%d%d%d)', function(d)
+        return string.char(tonumber(d))
+    end)
+    
+    return cleaned, isObf
+end
+
+-- Remote Spy System
+local remoteHooks = {}
+
+local function hookRemote(remote)
+    if not Environment.Capabilities.hookfunction or remoteHooks[remote] then 
+        return 
+    end
+    
+    if remote:IsA("RemoteEvent") then
+        local success = pcall(function()
+            remoteHooks[remote] = remote.OnClientEvent:Connect(function(...)
+                table.insert(GameData.RemoteCalls, {
+                    Name = remote.Name,
+                    Type = "RemoteEvent",
+                    Args = {...},
+                    Time = os.time()
+                })
+                GameData.Stats.Calls = GameData.Stats.Calls + 1
+            end)
+        end)
+    elseif remote:IsA("RemoteFunction") then
+        pcall(function()
+            local old = remote.OnClientInvoke
+            remote.OnClientInvoke = function(...)
+                table.insert(GameData.RemoteCalls, {
+                    Name = remote.Name,
+                    Type = "RemoteFunction",
+                    Args = {...},
+                    Time = os.time()
+                })
+                GameData.Stats.Calls = GameData.Stats.Calls + 1
+                if old then return old(...) end
+            end
+        end)
+    end
+end
+
+-- Path builder
+local function getPath(obj)
+    local path = {}
+    local current = obj
+    while current and current ~= game do
+        table.insert(path, 1, current.Name)
+        current = current.Parent
+    end
+    return table.concat(path, ".")
+end
+
+-- Scanner engine
+local function scanContainer(container, depth)
+    if depth > 20 then return end
+    
+    local success, children = pcall(function() 
+        return container:GetChildren() 
+    end)
+    
+    if not success then return end
+    
+    for _, child in ipairs(children) do
+        pcall(function()
+            -- Scripts
+            if child:IsA("LocalScript") or child:IsA("Script") then
+                local suc, src = pcall(function() return child.Source end)
+                if suc and src and src ~= "" then
+                    local cleaned, obf = deobfuscate(src)
+                    table.insert(GameData.Scripts, {
+                        Name = child.Name,
+                        Type = child.ClassName,
+                        Path = getPath(child),
+                        Source = cleaned,
+                        IsObfuscated = obf
+                    })
+                    GameData.Stats.Scripts = GameData.Stats.Scripts + 1
+                end
+            end
+            
+            -- Modules
+            if child:IsA("ModuleScript") then
+                local suc, src = pcall(function() return child.Source end)
+                if suc and src and src ~= "" then
+                    local cleaned, obf = deobfuscate(src)
+                    table.insert(GameData.Modules, {
+                        Name = child.Name,
+                        Path = getPath(child),
+                        Source = cleaned,
+                        IsObfuscated = obf
+                    })
+                    GameData.Stats.Modules = GameData.Stats.Modules + 1
+                end
+            end
+            
+            -- Remotes
+            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") or
+               child:IsA("BindableEvent") or child:IsA("BindableFunction") then
+                table.insert(GameData.Remotes, {
+                    Name = child.Name,
+                    Type = child.ClassName,
+                    Path = getPath(child)
+                })
+                GameData.Stats.Remotes = GameData.Stats.Remotes + 1
+                hookRemote(child)
+            end
+            
+            -- Assets
+            local assetId
+            if child:IsA("Decal") or child:IsA("Texture") then
+                assetId = child.Texture
+            elseif child:IsA("Sound") then
+                assetId = child.SoundId
+            elseif child:IsA("Animation") then
+                assetId = child.AnimationId
+            elseif child:IsA("MeshPart") then
+                assetId = child.MeshId
+            end
+            
+            if assetId and assetId ~= "" then
+                table.insert(GameData.Assets, {
+                    Name = child.Name,
+                    Type = child.ClassName,
+                    AssetId = assetId,
+                    Path = getPath(child)
+                })
+                GameData.Stats.Assets = GameData.Stats.Assets + 1
+            end
+            
+            -- Recurse
+            if #child:GetChildren() > 0 then
+                scanContainer(child, depth + 1)
+            end
+        end)
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- PHASE 3: ADAPTIVE OUTPUT SYSTEM
+-- ═══════════════════════════════════════════════════════════════════
+
+local function generateOutput()
+    local lines = {}
+    
+    table.insert(lines, "═".rep(70))
+    table.insert(lines, "GAME DUMP REPORT - " .. os.date("%Y-%m-%d %H:%M:%S"))
+    table.insert(lines, "Generated by: Adaptive Universal Dumper v" .. VERSION)
+    table.insert(lines, "Executor: " .. Environment.Executor)
+    table.insert(lines, "═".rep(70))
+    table.insert(lines, "\n[GAME INFO]")
+    for k, v in pairs(GameData.Info) do
+        table.insert(lines, k .. ": " .. tostring(v))
+    end
+    
+    table.insert(lines, "\n[STATISTICS]")
+    table.insert(lines, "Scripts: " .. GameData.Stats.Scripts)
+    table.insert(lines, "Modules: " .. GameData.Stats.Modules)
+    table.insert(lines, "Remotes: " .. GameData.Stats.Remotes)
+    table.insert(lines, "Assets: " .. GameData.Stats.Assets)
+    table.insert(lines, "Remote Calls Logged: " .. GameData.Stats.Calls)
+    
+    -- Scripts
+    if #GameData.Scripts > 0 then
+        table.insert(lines, "\n" .. "═".rep(70))
+        table.insert(lines, "[SCRIPTS - " .. #GameData.Scripts .. "]")
+        table.insert(lines, "═".rep(70))
+        for i, s in ipairs(GameData.Scripts) do
+            table.insert(lines, string.format("\n[%d] %s (%s)", i, s.Name, s.Type))
+            table.insert(lines, "Path: " .. s.Path)
+            if s.IsObfuscated then
+                table.insert(lines, "⚠️  OBFUSCATED DETECTED")
+            end
+            table.insert(lines, "\n" .. ("-".rep(40)))
+            table.insert(lines, s.Source)
+            table.insert(lines, ("-".rep(40)))
+        end
+    end
+    
+    -- Modules
+    if #GameData.Modules > 0 then
+        table.insert(lines, "\n" .. "═".rep(70))
+        table.insert(lines, "[MODULES - " .. #GameData.Modules .. "]")
+        table.insert(lines, "═".rep(70))
+        for i, m in ipairs(GameData.Modules) do
+            table.insert(lines, string.format("\n[%d] %s", i, m.Name))
+            table.insert(lines, "Path: " .. m.Path)
+            if m.IsObfuscated then
+                table.insert(lines, "⚠️  OBFUSCATED DETECTED")
+            end
+            table.insert(lines, "\n" .. ("-".rep(40)))
+            table.insert(lines, m.Source)
+            table.insert(lines, ("-".rep(40)))
+        end
+    end
+    
+    -- Remotes
+    if #GameData.Remotes > 0 then
+        table.insert(lines, "\n" .. "═".rep(70))
+        table.insert(lines, "[REMOTES - " .. #GameData.Remotes .. "]")
+        table.insert(lines, "═".rep(70))
+        for i, r in ipairs(GameData.Remotes) do
+            table.insert(lines, string.format("[%d] %s (%s)", i, r.Name, r.Type))
+            table.insert(lines, "    " .. r.Path)
+        end
+    end
+    
+    -- Remote Calls
+    if #GameData.RemoteCalls > 0 then
+        table.insert(lines, "\n" .. "═".rep(70))
+        table.insert(lines, "[REMOTE CALLS - " .. #GameData.RemoteCalls .. "]")
+        table.insert(lines, "═".rep(70))
+        for i = 1, math.min(50, #GameData.RemoteCalls) do
+            local c = GameData.RemoteCalls[i]
+            table.insert(lines, string.format("[%d] %s (%s)", i, c.Name, c.Type))
+        end
+    end
+    
+    -- Assets
+    if #GameData.Assets > 0 then
+        table.insert(lines, "\n" .. "═".rep(70))
+        table.insert(lines, "[ASSETS - " .. #GameData.Assets .. "]")
+        table.insert(lines, "═".rep(70))
+        for i, a in ipairs(GameData.Assets) do
+            table.insert(lines, string.format("[%d] %s (%s)", i, a.Name, a.Type))
+            table.insert(lines, "    AssetId: " .. a.AssetId)
+        end
+    end
+    
+    table.insert(lines, "\n" .. "═".rep(70))
+    table.insert(lines, "END OF REPORT")
+    table.insert(lines, "═".rep(70))
+    
+    return table.concat(lines, "\n")
+end
+
+-- Adaptive save system
+local function adaptiveSave(content)
+    local filename = string.format("GameDump_%s_%s.txt", 
+        GameData.Info.PlaceId, 
+        os.date("%Y%m%d_%H%M%S")
+    )
+    
+    local savedMethods = {}
+    
+    -- Method 1: File system
+    if Environment.Capabilities.writefile then
+        local success = pcall(function()
+            if Environment.Capabilities.makefolder then
+                makefolder(Environment.SavePath)
+            end
+            writefile(Environment.SavePath .. filename, content)
+        end)
+        
+        if success then
+            table.insert(savedMethods, "✅ File saved: " .. Environment.SavePath .. filename)
+        end
+    end
+    
+    -- Method 2: Clipboard
+    if Environment.Capabilities.setclipboard then
+        local success = pcall(function()
+            setclipboard(content)
+        end)
+        
+        if success then
+            table.insert(savedMethods, "✅ Copied to clipboard")
+        end
+    end
+    
+    -- Method 3: Console output
+    table.insert(savedMethods, "✅ Full output available in console")
+    
+    return savedMethods
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- PHASE 4: EXECUTION
+-- ═══════════════════════════════════════════════════════════════════
+
+print("\n🚀 STARTING SCAN...\n")
+
+-- Scan game
+local containers = {
+    {game.ReplicatedStorage, "ReplicatedStorage"},
+    {game.Lighting, "Lighting"},
+    {game.StarterGui, "StarterGui"},
+    {game.StarterPack, "StarterPack"},
+    {game.StarterPlayer, "StarterPlayer"},
+    {workspace, "Workspace"}
+}
+
+for _, container in ipairs(containers) do
+    print("📂 Scanning: " .. container[2])
+    scanContainer(container[1], 0)
+end
+
+print("\n✅ SCAN COMPLETE!\n")
+print("📊 RESULTS:")
+print("├─ Scripts: " .. GameData.Stats.Scripts)
+print("├─ Modules: " .. GameData.Stats.Modules)
+print("├─ Remotes: " .. GameData.Stats.Remotes)
+print("├─ Assets: " .. GameData.Stats.Assets)
+print("└─ Remote Calls: " .. GameData.Stats.Calls)
+
+-- Generate output
+local output = generateOutput()
+
+-- Adaptive save
+print("\n💾 SAVING OUTPUT...\n")
+local methods = adaptiveSave(output)
+
+for _, method in ipairs(methods) do
+    print(method)
+end
+
+-- Print to console
+print("\n" .. "═".rep(70))
+print("FULL OUTPUT BELOW (scroll to view all)")
+print("═".rep(70) .. "\n")
+print(output)
+
+print("\n\n" .. "═".rep(70))
+print("🎉 DUMPER COMPLETE!")
+print("📦 GitHub: " .. GITHUB_REPO)
+print("═".rep(70))
+
+return GameData
