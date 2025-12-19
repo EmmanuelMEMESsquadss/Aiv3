@@ -1,29 +1,27 @@
 -- ╔═══════════════════════════════════════════════════════════════╗
--- ║  ULTIMATE GAME DUMPER - Mobile Executor Optimized            ║
--- ║  GUI • Deobfuscation • Remote Spy • Asset Dump • Auto-Save   ║
+-- ║  ULTIMATE GAME DUMPER - FIXED FOR ARCEUS X                    ║
+-- ║  GUI • Deobfuscation • Remote Spy • Asset Dump               ║
 -- ╚═══════════════════════════════════════════════════════════════╝
 
-local HttpService = game:GetService("HttpService")
+print("╔═══════════════════════════════════════════════════════════════╗")
+print("║         GAME DUMPER - Starting Initialization...              ║")
+print("╚═══════════════════════════════════════════════════════════════╝")
+
+-- Wait for player to fully load
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
+repeat task.wait() until player
+repeat task.wait() until player.Character
+
+print("✅ Player loaded")
+
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 -- ═══════════════════════════════════════════════════════════════
--- CONFIGURATION
+-- CORRECT FILE PATH FOR ARCEUS X
 -- ═══════════════════════════════════════════════════════════════
-local CONFIG = {
-	MAX_DEPTH = 20,
-	DEOBFUSCATE = true,
-	REMOTE_SPY = true,
-	ASSET_DUMP = true,
-	AUTO_SAVE = true,
-	SAVE_PATHS = {
-		"/storage/emulated/0/Download/GameDumps/",
-		"/storage/emulated/0/Documents/GameDumps/",
-		"/sdcard/Download/GameDumps/",
-		"workspace/GameDumps/",
-		""
-	}
-}
+local SAVE_PATH = "/storage/emulated/0/Arceus X/Workspace/"
 
 -- ═══════════════════════════════════════════════════════════════
 -- DATA STORAGE
@@ -34,91 +32,76 @@ local dumpData = {
 	Remotes = {},
 	RemoteCalls = {},
 	Assets = {},
-	Instances = {},
-	GameInfo = {},
-	Stats = {Scripts = 0, Modules = 0, Remotes = 0, Assets = 0, RemoteCalls = 0}
+	GameInfo = {
+		PlaceId = game.PlaceId,
+		Name = game.Name or "Unknown",
+		JobId = game.JobId
+	},
+	Stats = {Scripts = 0, Modules = 0, Remotes = 0, Assets = 0, Calls = 0}
 }
 
 -- ═══════════════════════════════════════════════════════════════
 -- DEOBFUSCATION ENGINE
 -- ═══════════════════════════════════════════════════════════════
-local Deobfuscator = {}
-
-function Deobfuscator.cleanCode(source)
-	if not source or source == "" then return source end
+local function deobfuscate(source)
+	if not source then return source, false end
 	
-	-- Remove common obfuscation patterns
 	local cleaned = source
+	local isObf = false
 	
-	-- Pattern 1: String concatenation obfuscation
+	-- Detect obfuscation
+	if cleaned:find("getfenv") or cleaned:find("loadstring") or 
+	   cleaned:find("string%.char") or cleaned:find("byte%(") then
+		isObf = true
+	end
+	
+	-- Clean patterns
 	cleaned = cleaned:gsub('""%.%.""', '')
 	cleaned = cleaned:gsub("''%.%.''", '')
+	cleaned = cleaned:gsub('0x(%x+)', function(h) return tostring(tonumber(h, 16)) end)
 	
-	-- Pattern 2: Unnecessary parentheses
-	cleaned = cleaned:gsub('%(%s*([^%)]+)%s*%)', '%1')
-	
-	-- Pattern 3: Number obfuscation (0x hex)
-	cleaned = cleaned:gsub('0x(%x+)', function(hex)
-		return tostring(tonumber(hex, 16))
-	end)
-	
-	-- Pattern 4: getfenv/setfenv obfuscation markers
-	local hasObfuscation = cleaned:find("getfenv") or cleaned:find("loadstring") or 
-	                        cleaned:find("string%.char") or cleaned:find("byte")
-	
-	return cleaned, hasObfuscation
-end
-
-function Deobfuscator.beautify(source)
-	-- Basic beautification
-	local beautified = source:gsub(';', ';\n')
-	beautified = beautified:gsub('{', '{\n')
-	beautified = beautified:gsub('}', '\n}')
-	return beautified
+	return cleaned, isObf
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- REMOTE SPY SYSTEM
+-- REMOTE SPY
 -- ═══════════════════════════════════════════════════════════════
-local RemoteSpy = {}
-local spyConnections = {}
+local remoteHooks = {}
 
-function RemoteSpy.hook(remote)
-	if spyConnections[remote] then return end
+local function hookRemote(remote)
+	if remoteHooks[remote] then return end
 	
 	if remote:IsA("RemoteEvent") then
-		spyConnections[remote] = remote.OnClientEvent:Connect(function(...)
+		remoteHooks[remote] = remote.OnClientEvent:Connect(function(...)
 			table.insert(dumpData.RemoteCalls, {
-				Remote = remote.Name,
+				Name = remote.Name,
 				Type = "RemoteEvent",
-				Path = getPath(remote),
 				Args = {...},
-				Timestamp = os.time()
+				Time = os.time()
 			})
-			dumpData.Stats.RemoteCalls = dumpData.Stats.RemoteCalls + 1
+			dumpData.Stats.Calls = dumpData.Stats.Calls + 1
 		end)
 	elseif remote:IsA("RemoteFunction") then
-		local oldInvoke = remote.OnClientInvoke
+		local old = remote.OnClientInvoke
 		remote.OnClientInvoke = function(...)
 			table.insert(dumpData.RemoteCalls, {
-				Remote = remote.Name,
+				Name = remote.Name,
 				Type = "RemoteFunction",
-				Path = getPath(remote),
 				Args = {...},
-				Timestamp = os.time()
+				Time = os.time()
 			})
-			dumpData.Stats.RemoteCalls = dumpData.Stats.RemoteCalls + 1
-			if oldInvoke then return oldInvoke(...) end
+			dumpData.Stats.Calls = dumpData.Stats.Calls + 1
+			if old then return old(...) end
 		end
 	end
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- UTILITY FUNCTIONS
+-- SCANNING FUNCTIONS
 -- ═══════════════════════════════════════════════════════════════
-function getPath(instance)
+local function getPath(obj)
 	local path = {}
-	local current = instance
+	local current = obj
 	while current and current ~= game do
 		table.insert(path, 1, current.Name)
 		current = current.Parent
@@ -126,96 +109,78 @@ function getPath(instance)
 	return table.concat(path, ".")
 end
 
-function dumpScript(script)
-	local success, source = pcall(function() return script.Source end)
-	if not success or not source or source == "" then return false end
-	
-	local cleaned, isObfuscated = Deobfuscator.cleanCode(source)
-	
-	local scriptData = {
-		Name = script.Name,
-		Type = script.ClassName,
-		Path = getPath(script),
-		Source = cleaned,
-		OriginalSource = source,
-		IsObfuscated = isObfuscated,
-		Enabled = pcall(function() return script.Enabled end) and script.Enabled or true,
-		Parent = script.Parent and script.Parent.Name or "Unknown"
-	}
-	
-	if script:IsA("ModuleScript") then
-		table.insert(dumpData.Modules, scriptData)
-		dumpData.Stats.Modules = dumpData.Stats.Modules + 1
-	else
-		table.insert(dumpData.Scripts, scriptData)
-		dumpData.Stats.Scripts = dumpData.Stats.Scripts + 1
-	end
-	
-	return true
-end
-
-function dumpRemote(remote)
-	if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") or 
-	   remote:IsA("BindableEvent") or remote:IsA("BindableFunction") then
-		table.insert(dumpData.Remotes, {
-			Name = remote.Name,
-			Type = remote.ClassName,
-			Path = getPath(remote),
-			Parent = remote.Parent and remote.Parent.Name or "Unknown"
-		})
-		dumpData.Stats.Remotes = dumpData.Stats.Remotes + 1
-		
-		if CONFIG.REMOTE_SPY then
-			RemoteSpy.hook(remote)
-		end
-		return true
-	end
-	return false
-end
-
-function dumpAsset(instance)
-	if CONFIG.ASSET_DUMP then
-		local assetId = nil
-		if instance:IsA("Decal") or instance:IsA("Texture") then
-			assetId = instance.Texture
-		elseif instance:IsA("Sound") then
-			assetId = instance.SoundId
-		elseif instance:IsA("Animation") then
-			assetId = instance.AnimationId
-		elseif instance:IsA("MeshPart") then
-			assetId = instance.MeshId
-		end
-		
-		if assetId and assetId ~= "" then
-			table.insert(dumpData.Assets, {
-				Name = instance.Name,
-				Type = instance.ClassName,
-				AssetId = assetId,
-				Path = getPath(instance)
-			})
-			dumpData.Stats.Assets = dumpData.Stats.Assets + 1
-		end
-	end
-end
-
-function scanContainer(container, depth)
-	if depth > CONFIG.MAX_DEPTH then return end
+local function scanContainer(container, depth)
+	if depth > 20 then return end
 	
 	local success, children = pcall(function() return container:GetChildren() end)
 	if not success then return end
 	
 	for _, child in ipairs(children) do
 		pcall(function()
-			-- Scripts & Modules
-			if child:IsA("LocalScript") or child:IsA("Script") or child:IsA("ModuleScript") then
-				dumpScript(child)
+			-- Scripts
+			if child:IsA("LocalScript") or child:IsA("Script") then
+				local success, source = pcall(function() return child.Source end)
+				if success and source and source ~= "" then
+					local cleaned, isObf = deobfuscate(source)
+					table.insert(dumpData.Scripts, {
+						Name = child.Name,
+						Type = child.ClassName,
+						Path = getPath(child),
+						Source = cleaned,
+						IsObfuscated = isObf
+					})
+					dumpData.Stats.Scripts = dumpData.Stats.Scripts + 1
+				end
+			end
+			
+			-- Modules
+			if child:IsA("ModuleScript") then
+				local success, source = pcall(function() return child.Source end)
+				if success and source and source ~= "" then
+					local cleaned, isObf = deobfuscate(source)
+					table.insert(dumpData.Modules, {
+						Name = child.Name,
+						Path = getPath(child),
+						Source = cleaned,
+						IsObfuscated = isObf
+					})
+					dumpData.Stats.Modules = dumpData.Stats.Modules + 1
+				end
 			end
 			
 			-- Remotes
-			dumpRemote(child)
+			if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") or
+			   child:IsA("BindableEvent") or child:IsA("BindableFunction") then
+				table.insert(dumpData.Remotes, {
+					Name = child.Name,
+					Type = child.ClassName,
+					Path = getPath(child)
+				})
+				dumpData.Stats.Remotes = dumpData.Stats.Remotes + 1
+				hookRemote(child)
+			end
 			
 			-- Assets
-			dumpAsset(child)
+			local assetId
+			if child:IsA("Decal") or child:IsA("Texture") then
+				assetId = child.Texture
+			elseif child:IsA("Sound") then
+				assetId = child.SoundId
+			elseif child:IsA("Animation") then
+				assetId = child.AnimationId
+			elseif child:IsA("MeshPart") then
+				assetId = child.MeshId
+			end
+			
+			if assetId and assetId ~= "" then
+				table.insert(dumpData.Assets, {
+					Name = child.Name,
+					Type = child.ClassName,
+					AssetId = assetId,
+					Path = getPath(child)
+				})
+				dumpData.Stats.Assets = dumpData.Stats.Assets + 1
+			end
 			
 			-- Recurse
 			if #child:GetChildren() > 0 then
@@ -228,389 +193,285 @@ end
 -- ═══════════════════════════════════════════════════════════════
 -- FILE SAVING
 -- ═══════════════════════════════════════════════════════════════
-function tryWriteFile(filename, content)
-	for _, basePath in ipairs(CONFIG.SAVE_PATHS) do
-		local fullPath = basePath .. filename
-		local success = pcall(function()
-			if makefolder then
-				makefolder(basePath)
-			end
-			writefile(fullPath, content)
-		end)
-		if success then
-			return true, fullPath
+local function saveFile(filename, content)
+	local fullPath = SAVE_PATH .. filename
+	local success, err = pcall(function()
+		if makefolder then
+			makefolder(SAVE_PATH)
 		end
-	end
-	return false, nil
+		writefile(fullPath, content)
+	end)
+	return success, fullPath, err
 end
 
-function generateTextOutput()
-	local output = {}
+local function generateOutput()
+	local lines = {}
 	
-	table.insert(output, "═".rep(80))
-	table.insert(output, "ULTIMATE GAME DUMP REPORT")
-	table.insert(output, "Place: " .. game.Name .. " (" .. game.PlaceId .. ")")
-	table.insert(output, "Timestamp: " .. os.date("%Y-%m-%d %H:%M:%S"))
-	table.insert(output, "═".rep(80))
-	table.insert(output, "\n[STATISTICS]")
-	table.insert(output, "Scripts Found: " .. dumpData.Stats.Scripts)
-	table.insert(output, "Modules Found: " .. dumpData.Stats.Modules)
-	table.insert(output, "Remotes Found: " .. dumpData.Stats.Remotes)
-	table.insert(output, "Assets Found: " .. dumpData.Stats.Assets)
-	table.insert(output, "Remote Calls Logged: " .. dumpData.Stats.RemoteCalls)
-	table.insert(output, "\n")
+	table.insert(lines, "═".rep(70))
+	table.insert(lines, "GAME DUMP REPORT")
+	table.insert(lines, "Place: " .. game.Name .. " (" .. game.PlaceId .. ")")
+	table.insert(lines, "Time: " .. os.date("%Y-%m-%d %H:%M:%S"))
+	table.insert(lines, "═".rep(70))
+	table.insert(lines, "\n[STATISTICS]")
+	table.insert(lines, "Scripts: " .. dumpData.Stats.Scripts)
+	table.insert(lines, "Modules: " .. dumpData.Stats.Modules)
+	table.insert(lines, "Remotes: " .. dumpData.Stats.Remotes)
+	table.insert(lines, "Assets: " .. dumpData.Stats.Assets)
+	table.insert(lines, "Remote Calls: " .. dumpData.Stats.Calls)
+	table.insert(lines, "\n")
 	
 	-- Scripts
 	if #dumpData.Scripts > 0 then
-		table.insert(output, "\n" .. "═".rep(80))
-		table.insert(output, "[SCRIPTS - " .. #dumpData.Scripts .. "]")
-		table.insert(output, "═".rep(80))
-		for i, script in ipairs(dumpData.Scripts) do
-			table.insert(output, string.format("\n[%d] %s (%s)", i, script.Name, script.Type))
-			table.insert(output, "Path: " .. script.Path)
-			if script.IsObfuscated then
-				table.insert(output, "⚠️  OBFUSCATED SCRIPT DETECTED")
-			end
-			table.insert(output, "\nSOURCE:\n" .. ("-".rep(40)))
-			table.insert(output, script.Source)
-			table.insert(output, ("-".rep(40)) .. "\n")
+		table.insert(lines, "═".rep(70))
+		table.insert(lines, "[SCRIPTS - " .. #dumpData.Scripts .. "]")
+		table.insert(lines, "═".rep(70))
+		for i, s in ipairs(dumpData.Scripts) do
+			table.insert(lines, string.format("\n[%d] %s (%s)", i, s.Name, s.Type))
+			table.insert(lines, "Path: " .. s.Path)
+			if s.IsObfuscated then table.insert(lines, "⚠️  OBFUSCATED") end
+			table.insert(lines, "\nSOURCE:\n" .. ("-".rep(40)))
+			table.insert(lines, s.Source)
+			table.insert(lines, ("-".rep(40)))
 		end
 	end
 	
 	-- Modules
 	if #dumpData.Modules > 0 then
-		table.insert(output, "\n" .. "═".rep(80))
-		table.insert(output, "[MODULES - " .. #dumpData.Modules .. "]")
-		table.insert(output, "═".rep(80))
-		for i, module in ipairs(dumpData.Modules) do
-			table.insert(output, string.format("\n[%d] %s", i, module.Name))
-			table.insert(output, "Path: " .. module.Path)
-			table.insert(output, "\nSOURCE:\n" .. ("-".rep(40)))
-			table.insert(output, module.Source)
-			table.insert(output, ("-".rep(40)) .. "\n")
+		table.insert(lines, "\n" .. "═".rep(70))
+		table.insert(lines, "[MODULES - " .. #dumpData.Modules .. "]")
+		table.insert(lines, "═".rep(70))
+		for i, m in ipairs(dumpData.Modules) do
+			table.insert(lines, string.format("\n[%d] %s", i, m.Name))
+			table.insert(lines, "Path: " .. m.Path)
+			if m.IsObfuscated then table.insert(lines, "⚠️  OBFUSCATED") end
+			table.insert(lines, "\nSOURCE:\n" .. ("-".rep(40)))
+			table.insert(lines, m.Source)
+			table.insert(lines, ("-".rep(40)))
 		end
 	end
 	
 	-- Remotes
 	if #dumpData.Remotes > 0 then
-		table.insert(output, "\n" .. "═".rep(80))
-		table.insert(output, "[REMOTES - " .. #dumpData.Remotes .. "]")
-		table.insert(output, "═".rep(80))
-		for i, remote in ipairs(dumpData.Remotes) do
-			table.insert(output, string.format("[%d] %s (%s) - %s", i, remote.Name, remote.Type, remote.Path))
+		table.insert(lines, "\n" .. "═".rep(70))
+		table.insert(lines, "[REMOTES - " .. #dumpData.Remotes .. "]")
+		table.insert(lines, "═".rep(70))
+		for i, r in ipairs(dumpData.Remotes) do
+			table.insert(lines, string.format("[%d] %s (%s) - %s", i, r.Name, r.Type, r.Path))
 		end
 	end
 	
 	-- Remote Calls
 	if #dumpData.RemoteCalls > 0 then
-		table.insert(output, "\n" .. "═".rep(80))
-		table.insert(output, "[REMOTE CALLS LOGGED - " .. #dumpData.RemoteCalls .. "]")
-		table.insert(output, "═".rep(80))
-		for i, call in ipairs(dumpData.RemoteCalls) do
-			table.insert(output, string.format("[%d] %s (%s)", i, call.Remote, call.Type))
-			table.insert(output, "Args: " .. HttpService:JSONEncode(call.Args))
+		table.insert(lines, "\n" .. "═".rep(70))
+		table.insert(lines, "[REMOTE CALLS - " .. #dumpData.RemoteCalls .. "]")
+		table.insert(lines, "═".rep(70))
+		for i, c in ipairs(dumpData.RemoteCalls) do
+			table.insert(lines, string.format("[%d] %s (%s)", i, c.Name, c.Type))
+			table.insert(lines, "Args: " .. HttpService:JSONEncode(c.Args))
 		end
 	end
 	
 	-- Assets
 	if #dumpData.Assets > 0 then
-		table.insert(output, "\n" .. "═".rep(80))
-		table.insert(output, "[ASSETS - " .. #dumpData.Assets .. "]")
-		table.insert(output, "═".rep(80))
-		for i, asset in ipairs(dumpData.Assets) do
-			table.insert(output, string.format("[%d] %s (%s) - %s", i, asset.Name, asset.Type, asset.AssetId))
+		table.insert(lines, "\n" .. "═".rep(70))
+		table.insert(lines, "[ASSETS - " .. #dumpData.Assets .. "]")
+		table.insert(lines, "═".rep(70))
+		for i, a in ipairs(dumpData.Assets) do
+			table.insert(lines, string.format("[%d] %s (%s) - %s", i, a.Name, a.Type, a.AssetId))
 		end
 	end
 	
-	return table.concat(output, "\n")
+	return table.concat(lines, "\n")
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- GUI CREATION
+-- GUI CREATION - FIXED FOR MOBILE
 -- ═══════════════════════════════════════════════════════════════
-local function createGUI()
-	local ScreenGui = Instance.new("ScreenGui")
-	ScreenGui.Name = "GameDumperGUI"
-	ScreenGui.ResetOnSpawn = false
-	ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+print("🎨 Creating GUI...")
+
+local PlayerGui = player:WaitForChild("PlayerGui")
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GameDumperGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 999999
+
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 350, 0, 450)
+MainFrame.Position = UDim2.new(0.5, -175, 0.5, -225)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 12)
+Corner.Parent = MainFrame
+
+-- Title
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -20, 0, 35)
+Title.Position = UDim2.new(0, 10, 0, 5)
+Title.BackgroundTransparency = 1
+Title.Text = "🔥 GAME DUMPER"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = MainFrame
+
+-- Close Button
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -35, 0, 5)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.new(1, 1, 1)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 14
+CloseBtn.Parent = MainFrame
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseBtn
+
+CloseBtn.MouseButton1Click:Connect(function()
+	ScreenGui:Destroy()
+end)
+
+-- Status
+local Status = Instance.new("TextLabel")
+Status.Size = UDim2.new(1, -20, 0, 70)
+Status.Position = UDim2.new(0, 10, 0, 45)
+Status.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+Status.TextColor3 = Color3.new(1, 1, 1)
+Status.Font = Enum.Font.Gotham
+Status.TextSize = 13
+Status.TextWrapped = true
+Status.Text = "Ready!\nClick START to dump game"
+Status.Parent = MainFrame
+
+local StatusCorner = Instance.new("UICorner")
+StatusCorner.CornerRadius = UDim.new(0, 8)
+StatusCorner.Parent = Status
+
+-- Stats
+local Stats = Instance.new("TextLabel")
+Stats.Size = UDim2.new(1, -20, 0, 150)
+Stats.Position = UDim2.new(0, 10, 0, 125)
+Stats.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+Stats.TextColor3 = Color3.new(1, 1, 1)
+Stats.Font = Enum.Font.Code
+Stats.TextSize = 12
+Stats.TextWrapped = true
+Stats.TextXAlignment = Enum.TextXAlignment.Left
+Stats.TextYAlignment = Enum.TextYAlignment.Top
+Stats.Text = "📊 STATISTICS\n\n📜 Scripts: 0\n📦 Modules: 0\n📡 Remotes: 0\n🎨 Assets: 0\n📞 Calls: 0"
+Stats.Parent = MainFrame
+
+local StatsCorner = Instance.new("UICorner")
+StatsCorner.CornerRadius = UDim.new(0, 8)
+StatsCorner.Parent = Stats
+
+-- Buttons
+local function createButton(text, pos, color)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -20, 0, 38)
+	btn.Position = UDim2.new(0, 10, 0, pos)
+	btn.BackgroundColor3 = color
+	btn.Text = text
+	btn.TextColor3 = Color3.new(1, 1, 1)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 14
+	btn.Parent = MainFrame
 	
-	-- Main Frame
-	local MainFrame = Instance.new("Frame")
-	MainFrame.Name = "MainFrame"
-	MainFrame.Size = UDim2.new(0, 400, 0, 500)
-	MainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
-	MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-	MainFrame.BorderSizePixel = 0
-	MainFrame.Parent = ScreenGui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = btn
 	
-	local UICorner = Instance.new("UICorner")
-	UICorner.CornerRadius = UDim.new(0, 10)
-	UICorner.Parent = MainFrame
-	
-	-- Title Bar
-	local TitleBar = Instance.new("Frame")
-	TitleBar.Name = "TitleBar"
-	TitleBar.Size = UDim2.new(1, 0, 0, 40)
-	TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-	TitleBar.BorderSizePixel = 0
-	TitleBar.Parent = MainFrame
-	
-	local TitleCorner = Instance.new("UICorner")
-	TitleCorner.CornerRadius = UDim.new(0, 10)
-	TitleCorner.Parent = TitleBar
-	
-	local Title = Instance.new("TextLabel")
-	Title.Name = "Title"
-	Title.Size = UDim2.new(1, -80, 1, 0)
-	Title.Position = UDim2.new(0, 10, 0, 0)
-	Title.BackgroundTransparency = 1
-	Title.Text = "🔥 ULTIMATE GAME DUMPER"
-	Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-	Title.Font = Enum.Font.GothamBold
-	Title.TextSize = 16
-	Title.TextXAlignment = Enum.TextXAlignment.Left
-	Title.Parent = TitleBar
-	
-	-- Close Button
-	local CloseBtn = Instance.new("TextButton")
-	CloseBtn.Name = "CloseButton"
-	CloseBtn.Size = UDim2.new(0, 30, 0, 30)
-	CloseBtn.Position = UDim2.new(1, -35, 0, 5)
-	CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-	CloseBtn.Text = "X"
-	CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	CloseBtn.Font = Enum.Font.GothamBold
-	CloseBtn.TextSize = 14
-	CloseBtn.Parent = TitleBar
-	
-	local CloseCorner = Instance.new("UICorner")
-	CloseCorner.CornerRadius = UDim.new(0, 6)
-	CloseCorner.Parent = CloseBtn
-	
-	CloseBtn.MouseButton1Click:Connect(function()
-		ScreenGui:Destroy()
-	end)
-	
-	-- Status Label
-	local StatusLabel = Instance.new("TextLabel")
-	StatusLabel.Name = "StatusLabel"
-	StatusLabel.Size = UDim2.new(1, -20, 0, 80)
-	StatusLabel.Position = UDim2.new(0, 10, 0, 50)
-	StatusLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-	StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	StatusLabel.Font = Enum.Font.Gotham
-	StatusLabel.TextSize = 14
-	StatusLabel.TextWrapped = true
-	StatusLabel.Text = "Ready to dump!\nClick START DUMP to begin"
-	StatusLabel.Parent = MainFrame
-	
-	local StatusCorner = Instance.new("UICorner")
-	StatusCorner.CornerRadius = UDim.new(0, 8)
-	StatusCorner.Parent = StatusLabel
-	
-	-- Stats Frame
-	local StatsFrame = Instance.new("Frame")
-	StatsFrame.Name = "StatsFrame"
-	StatsFrame.Size = UDim2.new(1, -20, 0, 200)
-	StatsFrame.Position = UDim2.new(0, 10, 0, 140)
-	StatsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-	StatsFrame.BorderSizePixel = 0
-	StatsFrame.Parent = MainFrame
-	
-	local StatsCorner = Instance.new("UICorner")
-	StatsCorner.CornerRadius = UDim.new(0, 8)
-	StatsCorner.Parent = StatsFrame
-	
-	local StatsText = Instance.new("TextLabel")
-	StatsText.Name = "StatsText"
-	StatsText.Size = UDim2.new(1, -20, 1, -20)
-	StatsText.Position = UDim2.new(0, 10, 0, 10)
-	StatsText.BackgroundTransparency = 1
-	StatsText.TextColor3 = Color3.fromRGB(255, 255, 255)
-	StatsText.Font = Enum.Font.Code
-	StatsText.TextSize = 13
-	StatsText.TextWrapped = true
-	StatsText.TextXAlignment = Enum.TextXAlignment.Left
-	StatsText.TextYAlignment = Enum.TextYAlignment.Top
-	StatsText.Text = "📊 STATISTICS\n\nScripts: 0\nModules: 0\nRemotes: 0\nAssets: 0\nRemote Calls: 0"
-	StatsText.Parent = StatsFrame
-	
-	-- Buttons Container
-	local ButtonsFrame = Instance.new("Frame")
-	ButtonsFrame.Name = "ButtonsFrame"
-	ButtonsFrame.Size = UDim2.new(1, -20, 0, 140)
-	ButtonsFrame.Position = UDim2.new(0, 10, 0, 350)
-	ButtonsFrame.BackgroundTransparency = 1
-	ButtonsFrame.Parent = MainFrame
-	
-	-- Start Dump Button
-	local DumpBtn = Instance.new("TextButton")
-	DumpBtn.Name = "DumpButton"
-	DumpBtn.Size = UDim2.new(1, 0, 0, 40)
-	DumpBtn.Position = UDim2.new(0, 0, 0, 0)
-	DumpBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 250)
-	DumpBtn.Text = "🚀 START DUMP"
-	DumpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	DumpBtn.Font = Enum.Font.GothamBold
-	DumpBtn.TextSize = 16
-	DumpBtn.Parent = ButtonsFrame
-	
-	local DumpCorner = Instance.new("UICorner")
-	DumpCorner.CornerRadius = UDim.new(0, 8)
-	DumpCorner.Parent = DumpBtn
-	
-	-- Save Button
-	local SaveBtn = Instance.new("TextButton")
-	SaveBtn.Name = "SaveButton"
-	SaveBtn.Size = UDim2.new(1, 0, 0, 40)
-	SaveBtn.Position = UDim2.new(0, 0, 0, 50)
-	SaveBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 100)
-	SaveBtn.Text = "💾 SAVE TO FILE"
-	SaveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	SaveBtn.Font = Enum.Font.GothamBold
-	SaveBtn.TextSize = 16
-	SaveBtn.Parent = ButtonsFrame
-	
-	local SaveCorner = Instance.new("UICorner")
-	SaveCorner.CornerRadius = UDim.new(0, 8)
-	SaveCorner.Parent = SaveBtn
-	
-	-- Copy Button
-	local CopyBtn = Instance.new("TextButton")
-	CopyBtn.Name = "CopyButton"
-	CopyBtn.Size = UDim2.new(1, 0, 0, 40)
-	CopyBtn.Position = UDim2.new(0, 0, 0, 100)
-	CopyBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
-	CopyBtn.Text = "📋 COPY TO CLIPBOARD"
-	CopyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	CopyBtn.Font = Enum.Font.GothamBold
-	CopyBtn.TextSize = 16
-	CopyBtn.Parent = ButtonsFrame
-	
-	local CopyCorner = Instance.new("UICorner")
-	CopyCorner.CornerRadius = UDim.new(0, 8)
-	CopyCorner.Parent = CopyBtn
-	
-	-- Make Draggable
-	local dragging, dragInput, dragStart, startPos
-	
-	TitleBar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = MainFrame.Position
-			
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
-			end)
-		end
-	end)
-	
-	TitleBar.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-			dragInput = input
-		end
-	end)
-	
-	game:GetService("UserInputService").InputChanged:Connect(function(input)
-		if input == dragInput and dragging then
-			local delta = input.Position - dragStart
-			MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-		end
-	end)
-	
-	-- Button Functions
-	DumpBtn.MouseButton1Click:Connect(function()
-		StatusLabel.Text = "🔄 Dumping game...\nPlease wait..."
-		DumpBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-		DumpBtn.Text = "⏳ DUMPING..."
-		
-		task.wait(0.1)
-		
-		-- Start dump
-		local containers = {
-			{game.ReplicatedStorage, "ReplicatedStorage"},
-			{game.Lighting, "Lighting"},
-			{game.StarterGui, "StarterGui"},
-			{game.StarterPack, "StarterPack"},
-			{game.StarterPlayer, "StarterPlayer"},
-			{workspace, "Workspace"}
-		}
-		
-		for _, container in ipairs(containers) do
-			scanContainer(container[1], 0)
-		end
-		
-		-- Update UI
-		StatsText.Text = string.format(
-			"📊 STATISTICS\n\n📜 Scripts: %d\n📦 Modules: %d\n📡 Remotes: %d\n🎨 Assets: %d\n📞 Remote Calls: %d",
-			dumpData.Stats.Scripts,
-			dumpData.Stats.Modules,
-			dumpData.Stats.Remotes,
-			dumpData.Stats.Assets,
-			dumpData.Stats.RemoteCalls
-		)
-		
-		StatusLabel.Text = "✅ DUMP COMPLETE!\nReady to save"
-		DumpBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 100)
-		DumpBtn.Text = "✅ DUMP COMPLETE"
-	end)
-	
-	SaveBtn.MouseButton1Click:Connect(function()
-		local textOutput = generateTextOutput()
-		local baseFilename = string.format("GameDump_%s_%s", game.PlaceId, os.date("%Y%m%d_%H%M%S"))
-		
-		-- Try text file
-		local success1, path1 = tryWriteFile(baseFilename .. ".txt", textOutput)
-		
-		-- Try JSON file
-		local success2, jsonData = pcall(function() return HttpService:JSONEncode(dumpData) end)
-		local success2b, path2
-		if success2 then
-			success2b, path2 = tryWriteFile(baseFilename .. ".json", jsonData)
-		end
-		
-		if success1 or success2b then
-			StatusLabel.Text = "✅ FILES SAVED!\nCheck Download folder"
-		else
-			StatusLabel.Text = "❌ Save failed!\nTry clipboard instead"
-		end
-	end)
-	
-	CopyBtn.MouseButton1Click:Connect(function()
-		local textOutput = generateTextOutput()
-		local success = pcall(function()
-			setclipboard(textOutput)
-		end)
-		
-		if success then
-			StatusLabel.Text = "✅ COPIED TO CLIPBOARD!"
-		else
-			StatusLabel.Text = "❌ Clipboard not supported"
-		end
-	end)
-	
-	ScreenGui.Parent = game:GetService("CoreGui")
-	
-	return ScreenGui
+	return btn
 end
 
--- ═══════════════════════════════════════════════════════════════
--- EXECUTION
--- ═══════════════════════════════════════════════════════════════
-print("╔═══════════════════════════════════════════════════════════════╗")
-print("║         ULTIMATE GAME DUMPER - Initializing...               ║")
-print("╚═══════════════════════════════════════════════════════════════╝")
+local DumpBtn = createButton("🚀 START DUMP", 285, Color3.fromRGB(50, 150, 250))
+local SaveBtn = createButton("💾 SAVE FILES", 333, Color3.fromRGB(50, 200, 100))
+local CopyBtn = createButton("📋 COPY", 381, Color3.fromRGB(200, 150, 50))
 
-local gui = createGUI()
+-- Button Functions
+DumpBtn.MouseButton1Click:Connect(function()
+	Status.Text = "🔄 Dumping...\nPlease wait"
+	DumpBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+	DumpBtn.Text = "⏳ DUMPING..."
+	
+	task.wait(0.1)
+	
+	-- Scan game
+	local containers = {
+		game.ReplicatedStorage,
+		game.Lighting,
+		game.StarterGui,
+		game.StarterPack,
+		game.StarterPlayer,
+		workspace
+	}
+	
+	for _, container in ipairs(containers) do
+		scanContainer(container, 0)
+	end
+	
+	-- Update UI
+	Stats.Text = string.format(
+		"📊 STATISTICS\n\n📜 Scripts: %d\n📦 Modules: %d\n📡 Remotes: %d\n🎨 Assets: %d\n📞 Calls: %d",
+		dumpData.Stats.Scripts,
+		dumpData.Stats.Modules,
+		dumpData.Stats.Remotes,
+		dumpData.Stats.Assets,
+		dumpData.Stats.Calls
+	)
+	
+	Status.Text = "✅ DONE!\nReady to save"
+	DumpBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 100)
+	DumpBtn.Text = "✅ COMPLETE"
+end)
 
-print("✅ GUI Created Successfully!")
-print("📌 Features Active:")
-print("   • Script & Module Dumping")
-print("   • Deobfuscation Engine")
-print("   • Remote Spy (Real-time)")
-print("   • Asset Extraction")
-print("   • Auto-Save to /Download/GameDumps/")
-print("\n🎮 Ready to use!")
+SaveBtn.MouseButton1Click:Connect(function()
+	local output = generateOutput()
+	local filename = string.format("GameDump_%s_%s.txt", game.PlaceId, os.date("%Y%m%d_%H%M%S"))
+	
+	local success, path = saveFile(filename, output)
+	
+	if success then
+		Status.Text = "✅ SAVED!\nCheck:\n" .. path
+	else
+		Status.Text = "❌ Save failed!\nTry COPY instead"
+	end
+	
+	-- Try JSON too
+	pcall(function()
+		local json = HttpService:JSONEncode(dumpData)
+		saveFile(filename:gsub("%.txt", ".json"), json)
+	end)
+end)
+
+CopyBtn.MouseButton1Click:Connect(function()
+	local output = generateOutput()
+	local success = pcall(function()
+		setclipboard(output)
+	end)
+	
+	if success then
+		Status.Text = "✅ COPIED!"
+	else
+		Status.Text = "❌ Clipboard failed"
+	end
+end)
+
+-- Parent to PlayerGui (NOT CoreGui for mobile!)
+ScreenGui.Parent = PlayerGui
+
+print("✅ GUI Created and visible!")
+print("📁 Save path: " .. SAVE_PATH)
+print("\n🎉 READY TO USE!")
