@@ -121,20 +121,25 @@ profileBtn.TextColor3 = Color3.new(1, 1, 1)
 profileBtn.Font = Enum.Font.GothamBold
 profileBtn.TextSize = 20
 profileBtn.Active = true
+profileBtn.ZIndex = 10 -- Higher than menu
 profileBtn.Parent = charLockBtn
 
 local profileCorner = Instance.new("UICorner")
 profileCorner.CornerRadius = UDim.new(0.5, 0)
 profileCorner.Parent = profileBtn
 
+-- Make sure corner has proper ZIndex too
+profileBtn.ZIndex = 10
+
 -- Profile Menu Container
 local profileMenu = Instance.new("Frame")
 profileMenu.Size = UDim2.new(0, 160, 0, 0) -- Start at 0 height for animation
-profileMenu.Position = UDim2.new(0, -30, 0, -10)
+profileMenu.Position = UDim2.new(0, -30, 0, 40) -- Position BELOW the + button
 profileMenu.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
 profileMenu.BorderSizePixel = 0
 profileMenu.ClipsDescendants = true
 profileMenu.Visible = false
+profileMenu.ZIndex = 5
 profileMenu.Parent = charLockBtn
 
 local menuCorner = Instance.new("UICorner")
