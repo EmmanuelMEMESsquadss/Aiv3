@@ -167,6 +167,7 @@ for i, profile in ipairs(profiles) do
 	btn.TextSize = 13
 	btn.TextColor3 = Color3.new(1, 1, 1)
 	btn.Text = profile.name .. " · " .. profile.desc
+	btn.ZIndex = 6 -- Above menu, below profile button
 	btn.Parent = profileMenu
 	
 	local btnCorner = Instance.new("UICorner")
@@ -180,6 +181,7 @@ for i, profile in ipairs(profiles) do
 	indicator.BackgroundColor3 = Color3.new(1, 1, 1)
 	indicator.BorderSizePixel = 0
 	indicator.Visible = (i == 1) -- First profile selected by default
+	indicator.ZIndex = 7 -- Above button
 	indicator.Parent = btn
 	
 	local indCorner = Instance.new("UICorner")
