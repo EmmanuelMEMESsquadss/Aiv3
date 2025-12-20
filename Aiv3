@@ -148,13 +148,32 @@ menuCorner.Parent = profileMenu
 
 -- Profile options
 local profiles = {
-	{name = "SMOOTH", desc = "Balanced", power = 15000, damping = 300, color = Color3.fromRGB(80, 200, 120)},
-	{name = "SNAP", desc = "Instant", power = 25000, damping = 150, color = Color3.fromRGB(255, 140, 60)},
-	{name = "BUTTER", desc = "Ultra Smooth", power = 12000, damping = 400, color = Color3.fromRGB(100, 180, 255)}
+	{name = "SMOOTH", desc = "Balanced", power = 15000, damping = 300, color = Color3.fromRGB(80, 200, 120), adaptive = false},
+	{name = "SNAP", desc = "Instant", power = 25000, damping = 150, color = Color3.fromRGB(255, 140, 60), adaptive = false},
+	{name = "BUTTER", desc = "Ultra Smooth", power = 12000, damping = 400, color = Color3.fromRGB(100, 180, 255), adaptive = false},
+	{name = "ADAPTIVE", desc = "Ping Based", power = 15000, damping = 300, color = Color3.fromRGB(255, 100, 255), adaptive = true}
 }
 
-local currentProfile = 1
+local currentProfile = 1  -- Default to SMOOTH profile (first one)
 local profileButtons = {}
+local isAdaptiveMode = false  -- Start with fixed profile
+
+-- Ping monitoring for adaptive mode
+local currentPing = 0
+local Stats = game:GetService("Stats")
+
+spawn(function()
+	while true do
+		wait(0.5)
+		-- Get network ping
+		local success, ping = pcall(function()
+			return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+		end)
+		if success and ping then
+			currentPing = ping
+		end
+	end
+end)
 
 for i, profile in ipairs(profiles) do
 	local btn = Instance.new("TextButton")
@@ -180,7 +199,7 @@ for i, profile in ipairs(profiles) do
 	indicator.Position = UDim2.new(0, 3, 0, 3)
 	indicator.BackgroundColor3 = Color3.new(1, 1, 1)
 	indicator.BorderSizePixel = 0
-	indicator.Visible = (i == 1) -- First profile selected by default
+	indicator.Visible = (i == 1) -- SMOOTH profile selected by default
 	indicator.ZIndex = 7 -- Above button
 	indicator.Parent = btn
 	
@@ -193,8 +212,13 @@ for i, profile in ipairs(profiles) do
 	-- Profile selection
 	btn.Activated:Connect(function()
 		currentProfile = i
-		GYRO_POWER = profile.power
-		GYRO_DAMPING = profile.damping
+		isAdaptiveMode = profile.adaptive
+		
+		if not isAdaptiveMode then
+			-- Fixed profile mode
+			GYRO_POWER = profile.power
+			GYRO_DAMPING = profile.damping
+		end
 		
 		-- Update indicators
 		for j, data in ipairs(profileButtons) do
@@ -231,9 +255,9 @@ profileBtn.Activated:Connect(function()
 	
 	if menuOpen then
 		profileMenu.Visible = true
-		-- Smooth expand animation
+		-- Smooth expand animation (4 profiles now)
 		TweenService:Create(profileMenu, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-			Size = UDim2.new(0, 160, 0, 125)
+			Size = UDim2.new(0, 160, 0, 165)  -- Increased height for 4th profile
 		}):Play()
 		TweenService:Create(profileBtn, TweenInfo.new(0.2), {
 			Rotation = 45,
@@ -454,20 +478,62 @@ spawn(function()
 end)
 
 -- ============================================
--- FIX #1: Character Rotation (BODYGYRO METHOD - PROFILE SYSTEM)
+-- FIX #1: Character Rotation (BODYGYRO METHOD - ADAPTIVE SYSTEM)
 -- ============================================
--- Dynamic profile switching with smooth animations
+-- Network-aware rotation with ping compensation
 
 local bodyGyro
 
--- Profile settings (controlled by UI buttons)
-GYRO_POWER = 15000      -- Default: SMOOTH profile
+-- Profile settings (controlled by UI buttons + adaptive system)
+GYRO_POWER = 15000
 GYRO_DAMPING = 300
+
+-- Adaptive tuning based on network conditions
+local function updateAdaptiveSettings()
+	if not isAdaptiveMode then return end
+	
+	-- Ping-based adjustment
+	-- Low ping (0-50ms): Aggressive tracking
+	-- Medium ping (50-150ms): Balanced
+	-- High ping (150-300ms): Smoother, more prediction
+	-- Very high ping (300+ms): Max smoothing to reduce jitter
+	
+	if currentPing < 50 then
+		-- Low latency: Can be aggressive
+		GYRO_POWER = 20000
+		GYRO_DAMPING = 250
+	elseif currentPing < 100 then
+		-- Good connection: Balanced
+		GYRO_POWER = 15000
+		GYRO_DAMPING = 300
+	elseif currentPing < 200 then
+		-- Moderate lag: Increase smoothing
+		GYRO_POWER = 12000
+		GYRO_DAMPING = 450
+	elseif currentPing < 300 then
+		-- High lag: Heavy smoothing to prevent jitter
+		GYRO_POWER = 9000
+		GYRO_DAMPING = 600
+	else
+		-- Extreme lag: Maximum smoothing
+		GYRO_POWER = 7000
+		GYRO_DAMPING = 800
+	end
+end
+
+-- Update adaptive settings periodically
+spawn(function()
+	while true do
+		wait(0.3)
+		if isAdaptiveMode then
+			updateAdaptiveSettings()
+		end
+	end
+end)
 
 RunService.Heartbeat:Connect(function()
 	if charLockTarget and hrp and humanoid and humanoid.Health > 0 then
 		if isDisabled then
-			-- Remove gyro when disabled
 			if bodyGyro then
 				bodyGyro:Destroy()
 				bodyGyro = nil
@@ -496,16 +562,21 @@ RunService.Heartbeat:Connect(function()
 				bodyGyro.Parent = hrp
 			end
 			
-			-- Calculate look direction
-			local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
+			-- Predict target position based on velocity (helps with lag)
+			local targetVelocity = targetHRP.AssemblyVelocity or Vector3.zero
+			local predictionTime = isAdaptiveMode and (currentPing / 1000) or 0
+			local predictedPos = targetHRP.Position + (targetVelocity * predictionTime)
+			
+			-- Calculate look direction with prediction
+			local lookPos = Vector3.new(predictedPos.X, hrp.Position.Y, predictedPos.Z)
 			local lookCFrame = CFrame.new(hrp.Position, lookPos)
 			
 			-- Apply rotation
 			bodyGyro.CFrame = lookCFrame
 			
-			-- Apply current profile settings
-			if bodyGyro.P ~= GYRO_POWER then bodyGyro.P = GYRO_POWER end
-			if bodyGyro.D ~= GYRO_DAMPING then bodyGyro.D = GYRO_DAMPING end
+			-- Continuously update settings (especially important for adaptive)
+			bodyGyro.P = GYRO_POWER
+			bodyGyro.D = GYRO_DAMPING
 		else
 			unlockChar()
 			if bodyGyro then
@@ -514,7 +585,6 @@ RunService.Heartbeat:Connect(function()
 			end
 		end
 	else
-		-- Clean up BodyGyro when not locked
 		if bodyGyro then
 			bodyGyro:Destroy()
 			bodyGyro = nil
@@ -563,7 +633,8 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-print("Mobile Lock System [PROFILE SYSTEM] loaded!")
-print("✅ CHAR LOCK: 3 Profiles Available (SMOOTH/SNAP/BUTTER)")
-print("✅ CAM LOCK: Original console-style")
-print("💡 Click [+] button to switch profiles | Drag to reposition")
+print("Mobile Lock System [ADAPTIVE SYSTEM] loaded!")
+print("✅ CHAR LOCK: 4 Profiles (SMOOTH/SNAP/BUTTER/ADAPTIVE)")
+print("✅ SMOOTH Mode: Default balanced profile")
+print("✅ ADAPTIVE: Try when experiencing lag/jitter")
+print("💡 Click [+] to switch profiles | Drag to move")
