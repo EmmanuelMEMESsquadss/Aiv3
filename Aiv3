@@ -17,9 +17,12 @@ local DEFAULT_SPEED = 16
 local currentSpeed = DEFAULT_SPEED
 local isSpeedActive = false
 local bypassMode = false
+local bypassMethod = 1  -- 1 = Velocity, 2 = CFrame, 3 = Hybrid
 
--- Speed bypass using velocity manipulation
+-- Speed bypass objects
 local bodyVelocity
+local lastPosition
+local lastUpdateTime = 0
 
 local function setupCharacter(char)
 	character = char
@@ -180,12 +183,18 @@ local function applyBypassSpeed(speed)
 	modeIndicator.Text = "BYPASS"
 	modeIndicator.TextColor3 = Color3.fromRGB(255, 100, 100)
 	
-	-- Create or update BodyVelocity for movement boost
-	if not bodyVelocity or bodyVelocity.Parent ~= hrp then
-		bodyVelocity = Instance.new("BodyVelocity")
-		bodyVelocity.MaxForce = Vector3.new(0, 0, 0) -- Start disabled
-		bodyVelocity.Parent = hrp
+	-- Try Method 1: Enhanced BodyVelocity
+	if bypassMethod == 1 then
+		if not bodyVelocity or bodyVelocity.Parent ~= hrp then
+			bodyVelocity = Instance.new("BodyVelocity")
+			bodyVelocity.MaxForce = Vector3.new(math.huge, 0, math.huge)  -- Stronger force
+			bodyVelocity.P = 5000  -- High power
+			bodyVelocity.Parent = hrp
+		end
 	end
+	
+	lastPosition = hrp.Position
+	lastUpdateTime = tick()
 	
 	return true
 end
@@ -238,10 +247,25 @@ applyBtn.Activated:Connect(function()
 	local isLocked = checkIfSpeedLocked()
 	
 	if isLocked then
-		-- Direct method failed, switch to bypass
+		-- Direct method failed, try bypass methods
+		
+		-- Try Method 1 first (BodyVelocity)
+		bypassMethod = 1
 		applyBypassSpeed(speed)
-		applyBtn.Text = "BYPASS ON"
+		
+		-- Wait and test if Method 1 works
+		task.wait(0.5)
+		local method1Works = (hrp.AssemblyLinearVelocity.Magnitude > DEFAULT_SPEED * 0.8) and (humanoid.MoveVector.Magnitude > 0.1)
+		
+		if not method1Works then
+			-- Method 1 failed, try Method 2 (CFrame)
+			warn("Bypass Method 1 failed, switching to Method 2 (CFrame)")
+			bypassMethod = 2
+		end
+		
+		applyBtn.Text = "BYPASS M" .. bypassMethod
 		applyBtn.BackgroundColor3 = Color3.fromRGB(255, 140, 60)
+		modeIndicator.Text = "BYP-" .. bypassMethod
 	else
 		-- Direct method worked
 		bypassMode = false
@@ -256,37 +280,82 @@ applyBtn.Activated:Connect(function()
 	-- Reset button text
 	task.wait(1.5)
 	if isSpeedActive then
-		applyBtn.Text = "ACTIVE"
+		if bypassMode then
+			applyBtn.Text = "BYP M" .. bypassMethod
+		else
+			applyBtn.Text = "ACTIVE"
+		end
 	else
 		applyBtn.Text = "APPLY"
 	end
 end)
 
--- Bypass mode velocity manipulation
-RunService.Heartbeat:Connect(function()
-	if not bypassMode or not isSpeedActive or not humanoid or not hrp or not bodyVelocity then
-		if bodyVelocity and bodyVelocity.MaxForce ~= Vector3.new(0, 0, 0) then
-			bodyVelocity.MaxForce = Vector3.new(0, 0, 0)
-		end
+-- Bypass mode - Multiple methods
+RunService.Heartbeat:Connect(function(dt)
+	if not bypassMode or not isSpeedActive or not humanoid or not hrp then
 		return
 	end
 	
-	-- Check if player is moving
+	-- Check if humanoid is in a state where we should apply speed
+	local state = humanoid:GetState()
+	if state == Enum.HumanoidStateType.Dead or 
+	   state == Enum.HumanoidStateType.Physics or
+	   state == Enum.HumanoidStateType.Swimming or
+	   state == Enum.HumanoidStateType.Climbing then
+		return
+	end
+	
 	local moveVector = humanoid.MoveVector
 	
-	if moveVector.Magnitude > 0 then
-		-- Player is trying to move
+	if moveVector.Magnitude > 0.1 then
 		local speedMultiplier = currentSpeed / DEFAULT_SPEED
 		
-		-- Calculate velocity boost
-		local targetVelocity = moveVector * currentSpeed
+		-- METHOD 1: Enhanced BodyVelocity (for games with weak protection)
+		if bypassMethod == 1 and bodyVelocity and bodyVelocity.Parent then
+			local targetVelocity = moveVector * currentSpeed
+			bodyVelocity.Velocity = Vector3.new(targetVelocity.X, hrp.AssemblyLinearVelocity.Y, targetVelocity.Z)
+		end
 		
-		-- Apply boost through BodyVelocity
-		bodyVelocity.MaxForce = Vector3.new(50000, 0, 50000)
-		bodyVelocity.Velocity = Vector3.new(targetVelocity.X, 0, targetVelocity.Z)
+		-- METHOD 2: CFrame Manipulation (for heavily protected games)
+		if bypassMethod == 2 then
+			local currentTime = tick()
+			local timeDelta = currentTime - lastUpdateTime
+			
+			if timeDelta > 0 then
+				-- Calculate how far we should move based on speed
+				local normalDistance = DEFAULT_SPEED * timeDelta
+				local boostedDistance = currentSpeed * timeDelta
+				local extraDistance = boostedDistance - normalDistance
+				
+				-- Apply the extra distance via CFrame
+				local moveDirection = moveVector.Unit
+				local newCFrame = hrp.CFrame + (moveDirection * extraDistance)
+				
+				-- Smooth teleport (less detectable)
+				hrp.CFrame = hrp.CFrame:Lerp(newCFrame, 0.7)
+				
+				lastUpdateTime = currentTime
+			end
+		end
+		
+		-- METHOD 3: Hybrid (combines both for maximum effectiveness)
+		if bypassMethod == 3 then
+			-- Small CFrame boost
+			local moveDirection = moveVector.Unit
+			local boostAmount = (currentSpeed - DEFAULT_SPEED) * dt * 0.3
+			hrp.CFrame = hrp.CFrame + (moveDirection * boostAmount)
+			
+			-- Plus velocity assistance
+			if bodyVelocity and bodyVelocity.Parent then
+				local targetVelocity = moveVector * (currentSpeed * 0.7)
+				bodyVelocity.Velocity = Vector3.new(targetVelocity.X, hrp.AssemblyLinearVelocity.Y, targetVelocity.Z)
+			end
+		end
 	else
-		-- Not moving, disable boost
-		bodyVelocity.MaxForce = Vector3.new(0, 0, 0)
+		-- Not moving, disable velocity
+		if bodyVelocity and bodyVelocity.Parent then
+			bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+		end
 	end
 end)
 
@@ -305,7 +374,10 @@ spawn(function()
 	end
 end)
 
-print("Mobile Speed Customizer loaded!")
+print("Mobile Speed Customizer [MULTI-BYPASS] loaded!")
 print("✅ Direct mode for most games")
-print("✅ Bypass mode for protected games")
+print("✅ Bypass Method 1: Enhanced BodyVelocity")
+print("✅ Bypass Method 2: CFrame manipulation (for heavy protection)")
+print("✅ Bypass Method 3: Hybrid approach")
 print("💡 Drag from title bar | Type speed & click APPLY")
+print("🔧 Auto-detects best bypass method")
