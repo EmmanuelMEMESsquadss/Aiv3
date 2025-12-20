@@ -1,493 +1,438 @@
---[[
-═══════════════════════════════════════════════════════════════════════════════
-    ADAPTIVE UNIVERSAL GAME DUMPER - AI-Like Intelligence
-    
-    ✨ Features:
-    • Auto-detects executor and capabilities
-    • Adapts to available functions (writefile, clipboard, etc.)
-    • Works on ALL executors (Synapse, Arceus X, KRNL, Delta, Fluxus, etc.)
-    • No GUI required - smart console output
-    • Deobfuscation engine
-    • Remote spy system
-    • Asset extraction
-    • Multiple save methods with fallback
-    
-    📦 GitHub Ready - Drop and go!
-    🔧 Self-configuring - Zero manual setup
-═══════════════════════════════════════════════════════════════════════════════
-]]
+-- LocalScript (StarterPlayerScripts)
+-- Mobile Lock-On + Camlock System [FIXED VERSION]
 
-local VERSION = "2.0.0"
-local GITHUB_REPO = "https://github.com/YourName/GameDumper"
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
-print("═══════════════════════════════════════════════════════════════")
-print("   ADAPTIVE UNIVERSAL GAME DUMPER v" .. VERSION)
-print("═══════════════════════════════════════════════════════════════")
-
--- ═══════════════════════════════════════════════════════════════════
--- PHASE 1: ENVIRONMENT DETECTION (AI-LIKE ADAPTATION)
--- ═══════════════════════════════════════════════════════════════════
-
-local Environment = {
-    Executor = "Unknown",
-    Capabilities = {},
-    SavePath = "",
-    IsMobile = false,
-    IsPC = false
-}
-
--- Detect Executor
-local function detectExecutor()
-    if getexecutorname then
-        return getexecutorname()
-    elseif identifyexecutor then
-        return identifyexecutor()
-    elseif KRNL_LOADED then
-        return "KRNL"
-    elseif syn then
-        return "Synapse X"
-    elseif ARCEUS_LOADED or getrenv().arceus then
-        return "Arceus X"
-    elseif Delta then
-        return "Delta"
-    elseif Fluxus then
-        return "Fluxus"
-    elseif getgenv().Solara then
-        return "Solara"
-    else
-        return "Unknown"
-    end
+-- Only run on mobile
+if not UserInputService.TouchEnabled then
+	return
 end
 
--- Detect Capabilities (AI-like feature detection)
-local function detectCapabilities()
-    local caps = {
-        writefile = writefile ~= nil,
-        readfile = readfile ~= nil,
-        makefolder = makefolder ~= nil,
-        delfolder = delfolder ~= nil,
-        listfiles = listfiles ~= nil,
-        isfile = isfile ~= nil,
-        isfolder = isfolder ~= nil,
-        setclipboard = setclipboard ~= nil,
-        getgenv = getgenv ~= nil,
-        getsenv = getsenv ~= nil,
-        decompile = decompile ~= nil,
-        saveinstance = saveinstance ~= nil,
-        request = request ~= nil or http_request ~= nil,
-        syn_request = syn and syn.request ~= nil,
-        hookfunction = hookfunction ~= nil or hookmetamethod ~= nil,
-        getconnections = getconnections ~= nil,
-        getcallingscript = getcallingscript ~= nil
-    }
-    
-    return caps
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local character, humanoid, hrp
+local isDisabled = false
+
+local function setupCharacter(char)
+	character = char
+	humanoid = char:WaitForChild("Humanoid")
+	hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
+	
+	if humanoid then 
+		humanoid.AutoRotate = true 
+		
+		-- Detect ragdoll/grab through state changes
+		humanoid.StateChanged:Connect(function(oldState, newState)
+			if newState == Enum.HumanoidStateType.Physics or 
+				newState == Enum.HumanoidStateType.Ragdoll or
+				newState == Enum.HumanoidStateType.FallingDown or
+				newState == Enum.HumanoidStateType.PlatformStanding then
+				isDisabled = true
+			elseif newState == Enum.HumanoidStateType.Running or
+				newState == Enum.HumanoidStateType.Landed or
+				newState == Enum.HumanoidStateType.Jumping then
+				isDisabled = false
+			end
+		end)
+		
+		-- Detect PlatformStand changes (common grab method)
+		humanoid:GetPropertyChangedSignal("PlatformStand"):Connect(function()
+			if humanoid.PlatformStand then
+				isDisabled = true
+			else
+				isDisabled = false
+			end
+		end)
+		
+		-- Detect Sit changes (some grabs use this)
+		humanoid:GetPropertyChangedSignal("Sit"):Connect(function()
+			if humanoid.Sit then
+				isDisabled = true
+			end
+		end)
+	end
+	
+	-- Monitor for welds/constraints added to HRP (grab detection)
+	if hrp then
+		hrp.ChildAdded:Connect(function(child)
+			if child:IsA("Weld") or child:IsA("WeldConstraint") or 
+				child:IsA("AlignPosition") or child:IsA("AlignOrientation") or
+				child:IsA("RopeConstraint") then
+				isDisabled = true
+				
+				-- Re-enable when constraint is removed
+				child.AncestryChanged:Connect(function()
+					if not child:IsDescendantOf(game) then
+						task.wait(0.5)
+						isDisabled = false
+					end
+				end)
+			end
+		end)
+	end
 end
 
--- Determine save path based on executor
-local function determineSavePath()
-    local executor = Environment.Executor
-    
-    -- Known executor paths
-    local paths = {
-        ["Synapse X"] = "workspace/",
-        ["Arceus X"] = "/storage/emulated/0/Arceus X/Workspace/",
-        ["KRNL"] = "workspace/",
-        ["Delta"] = "workspace/",
-        ["Fluxus"] = "workspace/",
-        ["Solara"] = "workspace/",
-        ["Unknown"] = ""
-    }
-    
-    return paths[executor] or ""
+if player.Character then setupCharacter(player.Character) end
+player.CharacterAdded:Connect(setupCharacter)
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "LockOnUI"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+-- Character Lock Button
+local charLockBtn = Instance.new("TextButton")
+charLockBtn.Size = UDim2.new(0, 110, 0, 50)
+charLockBtn.Position = UDim2.new(0.06, 0, 0.8, 0)
+charLockBtn.Text = "CHAR LOCK"
+charLockBtn.BackgroundColor3 = Color3.fromRGB(36, 137, 206)
+charLockBtn.TextColor3 = Color3.new(1, 1, 1)
+charLockBtn.Font = Enum.Font.GothamBold
+charLockBtn.TextSize = 16
+charLockBtn.Active = true
+charLockBtn.Parent = gui
+
+local charCorner = Instance.new("UICorner")
+charCorner.CornerRadius = UDim.new(0, 8)
+charCorner.Parent = charLockBtn
+
+-- Status indicator for character lock
+local charDot = Instance.new("Frame")
+charDot.Size = UDim2.new(0, 8, 0, 8)
+charDot.Position = UDim2.new(1, -12, 0, 4)
+charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+charDot.BorderSizePixel = 0
+charDot.Parent = charLockBtn
+
+local charDotCorner = Instance.new("UICorner")
+charDotCorner.CornerRadius = UDim.new(0.5, 0)
+charDotCorner.Parent = charDot
+
+-- Camlock Button
+local camLockBtn = Instance.new("TextButton")
+camLockBtn.Size = UDim2.new(0, 110, 0, 50)
+camLockBtn.Position = UDim2.new(0.06, 120, 0.8, 0)
+camLockBtn.Text = "CAM LOCK"
+camLockBtn.BackgroundColor3 = Color3.fromRGB(206, 137, 36)
+camLockBtn.TextColor3 = Color3.new(1, 1, 1)
+camLockBtn.Font = Enum.Font.GothamBold
+camLockBtn.TextSize = 16
+camLockBtn.Active = true
+camLockBtn.Parent = gui
+
+local camCorner = Instance.new("UICorner")
+camCorner.CornerRadius = UDim.new(0, 8)
+camCorner.Parent = camLockBtn
+
+-- Draggable (both buttons move together)
+local dragging, dragInput, dragStart, startPos
+local function updateDrag(input)
+	local delta = input.Position - dragStart
+	charLockBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+		startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	camLockBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X + 120,
+		startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 end
 
--- Initialize environment
-Environment.Executor = detectExecutor()
-Environment.Capabilities = detectCapabilities()
-Environment.SavePath = determineSavePath()
-Environment.IsMobile = game:GetService("UserInputService").TouchEnabled
-Environment.IsPC = not Environment.IsMobile
+charLockBtn.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = charLockBtn.Position
+		dragInput = input
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then dragging = false end
+		end)
+	end
+end)
 
-print("\n🔍 ENVIRONMENT DETECTION:")
-print("├─ Executor: " .. Environment.Executor)
-print("├─ Platform: " .. (Environment.IsMobile and "Mobile" or "PC"))
-print("├─ Save Path: " .. (Environment.SavePath ~= "" and Environment.SavePath or "Auto-detect"))
-print("└─ Capabilities Detected:")
+camLockBtn.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = charLockBtn.Position
+		dragInput = input
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then dragging = false end
+		end)
+	end
+end)
 
-for cap, available in pairs(Environment.Capabilities) do
-    if available then
-        print("   ✅ " .. cap)
-    end
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and input == dragInput then updateDrag(input) end
+end)
+
+-- Lock state
+local MAX_DIST = 100
+local charLockTarget, camLockTarget
+local lockBillboard
+
+local function detachBillboard()
+	if lockBillboard then
+		lockBillboard:Destroy()
+		lockBillboard = nil
+	end
 end
 
--- ═══════════════════════════════════════════════════════════════════
--- PHASE 2: DATA COLLECTION ENGINE
--- ═══════════════════════════════════════════════════════════════════
-
-local GameData = {
-    Info = {
-        PlaceId = game.PlaceId,
-        GameId = game.GameId,
-        Name = game.Name or "Unknown",
-        CreatorId = game.CreatorId,
-        JobId = game.JobId
-    },
-    Scripts = {},
-    Modules = {},
-    Remotes = {},
-    RemoteCalls = {},
-    Assets = {},
-    Stats = {Scripts = 0, Modules = 0, Remotes = 0, Assets = 0, Calls = 0}
-}
-
--- Deobfuscation Engine
-local function deobfuscate(source)
-    if not source or source == "" then return source, false end
-    
-    local cleaned = source
-    local isObf = false
-    
-    -- Detect obfuscation markers
-    if cleaned:find("getfenv") or cleaned:find("loadstring") or
-       cleaned:find("string%.char") or cleaned:find("byte%(") or
-       cleaned:find("xor") or cleaned:find("bit32") then
-        isObf = true
-    end
-    
-    -- Clean common patterns
-    cleaned = cleaned:gsub('""%.%.""', '')
-    cleaned = cleaned:gsub("''%.%.''", '')
-    cleaned = cleaned:gsub('0x(%x+)', function(h) 
-        return tostring(tonumber(h, 16)) 
-    end)
-    cleaned = cleaned:gsub('\\(%d%d%d)', function(d)
-        return string.char(tonumber(d))
-    end)
-    
-    return cleaned, isObf
+local function attachBillboard(model, color)
+	detachBillboard()
+	local targetHrp = model:FindFirstChild("HumanoidRootPart")
+	if not targetHrp then return end
+	local bb = Instance.new("BillboardGui")
+	bb.Size = UDim2.new(0, 120, 0, 40)
+	bb.StudsOffset = Vector3.new(0, 3.2, 0)
+	bb.AlwaysOnTop = true
+	bb.Parent = targetHrp
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = "LOCKED"
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBold
+	label.TextColor3 = color
+	label.Parent = bb
+	lockBillboard = bb
 end
 
--- Remote Spy System
-local remoteHooks = {}
-
-local function hookRemote(remote)
-    if not Environment.Capabilities.hookfunction or remoteHooks[remote] then 
-        return 
-    end
-    
-    if remote:IsA("RemoteEvent") then
-        local success = pcall(function()
-            remoteHooks[remote] = remote.OnClientEvent:Connect(function(...)
-                table.insert(GameData.RemoteCalls, {
-                    Name = remote.Name,
-                    Type = "RemoteEvent",
-                    Args = {...},
-                    Time = os.time()
-                })
-                GameData.Stats.Calls = GameData.Stats.Calls + 1
-            end)
-        end)
-    elseif remote:IsA("RemoteFunction") then
-        pcall(function()
-            local old = remote.OnClientInvoke
-            remote.OnClientInvoke = function(...)
-                table.insert(GameData.RemoteCalls, {
-                    Name = remote.Name,
-                    Type = "RemoteFunction",
-                    Args = {...},
-                    Time = os.time()
-                })
-                GameData.Stats.Calls = GameData.Stats.Calls + 1
-                if old then return old(...) end
-            end
-        end)
-    end
+local function isValidTarget(model)
+	if not model or not model:IsA("Model") then return false end
+	local hum = model:FindFirstChildWhichIsA("Humanoid")
+	local part = model:FindFirstChild("HumanoidRootPart")
+	if not hum or not part or hum.Health <= 0 then return false end
+	if model == character then return false end
+	if Players:GetPlayerFromCharacter(model) == player then return false end
+	return true
 end
 
--- Path builder
-local function getPath(obj)
-    local path = {}
-    local current = obj
-    while current and current ~= game do
-        table.insert(path, 1, current.Name)
-        current = current.Parent
-    end
-    return table.concat(path, ".")
+local function getNearestTarget()
+	if not hrp then return end
+	local nearest, dist = nil, MAX_DIST
+	for _, pl in ipairs(Players:GetPlayers()) do
+		if pl ~= player and pl.Character and isValidTarget(pl.Character) then
+			local d = (hrp.Position - pl.Character.HumanoidRootPart.Position).Magnitude
+			if d < dist then
+				dist = d
+				nearest = pl.Character
+			end
+		end
+	end
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("Model") and isValidTarget(obj) then
+			local targetHrp = obj:FindFirstChild("HumanoidRootPart")
+			if targetHrp then
+				local d = (hrp.Position - targetHrp.Position).Magnitude
+				if d < dist then
+					dist = d
+					nearest = obj
+				end
+			end
+		end
+	end
+	return nearest
 end
 
--- Scanner engine
-local function scanContainer(container, depth)
-    if depth > 20 then return end
-    
-    local success, children = pcall(function() 
-        return container:GetChildren() 
-    end)
-    
-    if not success then return end
-    
-    for _, child in ipairs(children) do
-        pcall(function()
-            -- Scripts
-            if child:IsA("LocalScript") or child:IsA("Script") then
-                local suc, src = pcall(function() return child.Source end)
-                if suc and src and src ~= "" then
-                    local cleaned, obf = deobfuscate(src)
-                    table.insert(GameData.Scripts, {
-                        Name = child.Name,
-                        Type = child.ClassName,
-                        Path = getPath(child),
-                        Source = cleaned,
-                        IsObfuscated = obf
-                    })
-                    GameData.Stats.Scripts = GameData.Stats.Scripts + 1
-                end
-            end
-            
-            -- Modules
-            if child:IsA("ModuleScript") then
-                local suc, src = pcall(function() return child.Source end)
-                if suc and src and src ~= "" then
-                    local cleaned, obf = deobfuscate(src)
-                    table.insert(GameData.Modules, {
-                        Name = child.Name,
-                        Path = getPath(child),
-                        Source = cleaned,
-                        IsObfuscated = obf
-                    })
-                    GameData.Stats.Modules = GameData.Stats.Modules + 1
-                end
-            end
-            
-            -- Remotes
-            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") or
-               child:IsA("BindableEvent") or child:IsA("BindableFunction") then
-                table.insert(GameData.Remotes, {
-                    Name = child.Name,
-                    Type = child.ClassName,
-                    Path = getPath(child)
-                })
-                GameData.Stats.Remotes = GameData.Stats.Remotes + 1
-                hookRemote(child)
-            end
-            
-            -- Assets
-            local assetId
-            if child:IsA("Decal") or child:IsA("Texture") then
-                assetId = child.Texture
-            elseif child:IsA("Sound") then
-                assetId = child.SoundId
-            elseif child:IsA("Animation") then
-                assetId = child.AnimationId
-            elseif child:IsA("MeshPart") then
-                assetId = child.MeshId
-            end
-            
-            if assetId and assetId ~= "" then
-                table.insert(GameData.Assets, {
-                    Name = child.Name,
-                    Type = child.ClassName,
-                    AssetId = assetId,
-                    Path = getPath(child)
-                })
-                GameData.Stats.Assets = GameData.Stats.Assets + 1
-            end
-            
-            -- Recurse
-            if #child:GetChildren() > 0 then
-                scanContainer(child, depth + 1)
-            end
-        end)
-    end
+local function unlockChar()
+	charLockTarget = nil
+	if humanoid then humanoid.AutoRotate = true end
+	charLockBtn.Text = "CHAR LOCK"
+	charLockBtn.BackgroundColor3 = Color3.fromRGB(36, 137, 206)
+	if not camLockTarget then detachBillboard() end
 end
 
--- ═══════════════════════════════════════════════════════════════════
--- PHASE 3: ADAPTIVE OUTPUT SYSTEM
--- ═══════════════════════════════════════════════════════════════════
-
-local function generateOutput()
-    local lines = {}
-    
-    table.insert(lines, "═".rep(70))
-    table.insert(lines, "GAME DUMP REPORT - " .. os.date("%Y-%m-%d %H:%M:%S"))
-    table.insert(lines, "Generated by: Adaptive Universal Dumper v" .. VERSION)
-    table.insert(lines, "Executor: " .. Environment.Executor)
-    table.insert(lines, "═".rep(70))
-    table.insert(lines, "\n[GAME INFO]")
-    for k, v in pairs(GameData.Info) do
-        table.insert(lines, k .. ": " .. tostring(v))
-    end
-    
-    table.insert(lines, "\n[STATISTICS]")
-    table.insert(lines, "Scripts: " .. GameData.Stats.Scripts)
-    table.insert(lines, "Modules: " .. GameData.Stats.Modules)
-    table.insert(lines, "Remotes: " .. GameData.Stats.Remotes)
-    table.insert(lines, "Assets: " .. GameData.Stats.Assets)
-    table.insert(lines, "Remote Calls Logged: " .. GameData.Stats.Calls)
-    
-    -- Scripts
-    if #GameData.Scripts > 0 then
-        table.insert(lines, "\n" .. "═".rep(70))
-        table.insert(lines, "[SCRIPTS - " .. #GameData.Scripts .. "]")
-        table.insert(lines, "═".rep(70))
-        for i, s in ipairs(GameData.Scripts) do
-            table.insert(lines, string.format("\n[%d] %s (%s)", i, s.Name, s.Type))
-            table.insert(lines, "Path: " .. s.Path)
-            if s.IsObfuscated then
-                table.insert(lines, "⚠️  OBFUSCATED DETECTED")
-            end
-            table.insert(lines, "\n" .. ("-".rep(40)))
-            table.insert(lines, s.Source)
-            table.insert(lines, ("-".rep(40)))
-        end
-    end
-    
-    -- Modules
-    if #GameData.Modules > 0 then
-        table.insert(lines, "\n" .. "═".rep(70))
-        table.insert(lines, "[MODULES - " .. #GameData.Modules .. "]")
-        table.insert(lines, "═".rep(70))
-        for i, m in ipairs(GameData.Modules) do
-            table.insert(lines, string.format("\n[%d] %s", i, m.Name))
-            table.insert(lines, "Path: " .. m.Path)
-            if m.IsObfuscated then
-                table.insert(lines, "⚠️  OBFUSCATED DETECTED")
-            end
-            table.insert(lines, "\n" .. ("-".rep(40)))
-            table.insert(lines, m.Source)
-            table.insert(lines, ("-".rep(40)))
-        end
-    end
-    
-    -- Remotes
-    if #GameData.Remotes > 0 then
-        table.insert(lines, "\n" .. "═".rep(70))
-        table.insert(lines, "[REMOTES - " .. #GameData.Remotes .. "]")
-        table.insert(lines, "═".rep(70))
-        for i, r in ipairs(GameData.Remotes) do
-            table.insert(lines, string.format("[%d] %s (%s)", i, r.Name, r.Type))
-            table.insert(lines, "    " .. r.Path)
-        end
-    end
-    
-    -- Remote Calls
-    if #GameData.RemoteCalls > 0 then
-        table.insert(lines, "\n" .. "═".rep(70))
-        table.insert(lines, "[REMOTE CALLS - " .. #GameData.RemoteCalls .. "]")
-        table.insert(lines, "═".rep(70))
-        for i = 1, math.min(50, #GameData.RemoteCalls) do
-            local c = GameData.RemoteCalls[i]
-            table.insert(lines, string.format("[%d] %s (%s)", i, c.Name, c.Type))
-        end
-    end
-    
-    -- Assets
-    if #GameData.Assets > 0 then
-        table.insert(lines, "\n" .. "═".rep(70))
-        table.insert(lines, "[ASSETS - " .. #GameData.Assets .. "]")
-        table.insert(lines, "═".rep(70))
-        for i, a in ipairs(GameData.Assets) do
-            table.insert(lines, string.format("[%d] %s (%s)", i, a.Name, a.Type))
-            table.insert(lines, "    AssetId: " .. a.AssetId)
-        end
-    end
-    
-    table.insert(lines, "\n" .. "═".rep(70))
-    table.insert(lines, "END OF REPORT")
-    table.insert(lines, "═".rep(70))
-    
-    return table.concat(lines, "\n")
+local function unlockCam()
+	camLockTarget = nil
+	camLockBtn.Text = "CAM LOCK"
+	camLockBtn.BackgroundColor3 = Color3.fromRGB(206, 137, 36)
+	if not charLockTarget then detachBillboard() end
+	-- Restore camera to normal
+	if camera then
+		camera.CameraType = Enum.CameraType.Custom
+		if humanoid then
+			camera.CameraSubject = humanoid
+		end
+	end
 end
 
--- Adaptive save system
-local function adaptiveSave(content)
-    local filename = string.format("GameDump_%s_%s.txt", 
-        GameData.Info.PlaceId, 
-        os.date("%Y%m%d_%H%M%S")
-    )
-    
-    local savedMethods = {}
-    
-    -- Method 1: File system
-    if Environment.Capabilities.writefile then
-        local success = pcall(function()
-            if Environment.Capabilities.makefolder then
-                makefolder(Environment.SavePath)
-            end
-            writefile(Environment.SavePath .. filename, content)
-        end)
-        
-        if success then
-            table.insert(savedMethods, "✅ File saved: " .. Environment.SavePath .. filename)
-        end
-    end
-    
-    -- Method 2: Clipboard
-    if Environment.Capabilities.setclipboard then
-        local success = pcall(function()
-            setclipboard(content)
-        end)
-        
-        if success then
-            table.insert(savedMethods, "✅ Copied to clipboard")
-        end
-    end
-    
-    -- Method 3: Console output
-    table.insert(savedMethods, "✅ Full output available in console")
-    
-    return savedMethods
-end
+-- Character Lock Button
+charLockBtn.Activated:Connect(function()
+	if charLockTarget then
+		unlockChar()
+	else
+		local t = getNearestTarget()
+		if t then
+			charLockTarget = t
+			if humanoid then humanoid.AutoRotate = false end
+			attachBillboard(t, Color3.fromRGB(255, 80, 80))
+			charLockBtn.Text = "UNLOCK"
+			charLockBtn.BackgroundColor3 = Color3.fromRGB(206, 36, 36)
+		else
+			charLockBtn.Text = "NO TARGET"
+			task.delay(1, function()
+				if not charLockTarget then 
+					charLockBtn.Text = "CHAR LOCK" 
+				end
+			end)
+		end
+	end
+end)
 
--- ═══════════════════════════════════════════════════════════════════
--- PHASE 4: EXECUTION
--- ═══════════════════════════════════════════════════════════════════
+-- Camlock Button
+camLockBtn.Activated:Connect(function()
+	if camLockTarget then
+		unlockCam()
+	else
+		local t = getNearestTarget()
+		if t then
+			camLockTarget = t
+			attachBillboard(t, Color3.fromRGB(80, 255, 80))
+			camLockBtn.Text = "UNLOCK"
+			camLockBtn.BackgroundColor3 = Color3.fromRGB(36, 206, 36)
+		else
+			camLockBtn.Text = "NO TARGET"
+			task.delay(1, function()
+				if not camLockTarget then 
+					camLockBtn.Text = "CAM LOCK" 
+				end
+			end)
+		end
+	end
+end)
 
-print("\n🚀 STARTING SCAN...\n")
+-- Update status indicator
+spawn(function()
+	while true do
+		wait(0.1)
+		if isDisabled then
+			charDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+		else
+			charDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+		end
+	end
+end)
 
--- Scan game
-local containers = {
-    {game.ReplicatedStorage, "ReplicatedStorage"},
-    {game.Lighting, "Lighting"},
-    {game.StarterGui, "StarterGui"},
-    {game.StarterPack, "StarterPack"},
-    {game.StarterPlayer, "StarterPlayer"},
-    {workspace, "Workspace"}
-}
+-- ============================================
+-- FIX #1: Character Rotation (BODYGYRO METHOD)
+-- ============================================
+-- Using BodyGyro instead of CFrame manipulation prevents:
+-- - Network ownership conflicts
+-- - Velocity cancellation
+-- - Rubber-banding/teleporting
+-- - Death from position desync
 
-for _, container in ipairs(containers) do
-    print("📂 Scanning: " .. container[2])
-    scanContainer(container[1], 0)
-end
+local bodyGyro
 
-print("\n✅ SCAN COMPLETE!\n")
-print("📊 RESULTS:")
-print("├─ Scripts: " .. GameData.Stats.Scripts)
-print("├─ Modules: " .. GameData.Stats.Modules)
-print("├─ Remotes: " .. GameData.Stats.Remotes)
-print("├─ Assets: " .. GameData.Stats.Assets)
-print("└─ Remote Calls: " .. GameData.Stats.Calls)
+RunService.Heartbeat:Connect(function()
+	if charLockTarget and hrp and humanoid and humanoid.Health > 0 then
+		if isDisabled then
+			-- Remove gyro when disabled
+			if bodyGyro then
+				bodyGyro:Destroy()
+				bodyGyro = nil
+			end
+			return
+		end
+		
+		if humanoid.PlatformStand or humanoid.Sit then
+			if bodyGyro then
+				bodyGyro:Destroy()
+				bodyGyro = nil
+			end
+			return
+		end
+		
+		local targetHRP = charLockTarget:FindFirstChild("HumanoidRootPart")
+		local targetHum = charLockTarget:FindFirstChildWhichIsA("Humanoid")
+		
+		if targetHRP and targetHum and targetHum.Health > 0 then
+			-- Create BodyGyro if it doesn't exist
+			if not bodyGyro or bodyGyro.Parent ~= hrp then
+				bodyGyro = Instance.new("BodyGyro")
+				bodyGyro.MaxTorque = Vector3.new(0, math.huge, 0) -- Only Y-axis rotation
+				bodyGyro.P = 10000 -- Responsiveness
+				bodyGyro.D = 500 -- Dampening (prevents jitter)
+				bodyGyro.Parent = hrp
+			end
+			
+			-- Calculate look direction (same Y level to avoid tilting)
+			local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
+			local lookCFrame = CFrame.new(hrp.Position, lookPos)
+			
+			-- Apply rotation smoothly
+			bodyGyro.CFrame = lookCFrame
+		else
+			unlockChar()
+			if bodyGyro then
+				bodyGyro:Destroy()
+				bodyGyro = nil
+			end
+		end
+	else
+		-- Clean up BodyGyro when not locked
+		if bodyGyro then
+			bodyGyro:Destroy()
+			bodyGyro = nil
+		end
+	end
+end)
 
--- Generate output
-local output = generateOutput()
+-- ============================================
+-- FIX #2: Camera Lock (ENHANCED STABILITY)
+-- ============================================
+local CAMERA_DISTANCE = 15
+local CAMERA_HEIGHT = 3
+local MAX_CAMERA_OFFSET = 50 -- Maximum allowed distance from ideal position
+local lastValidCamCFrame -- Fallback position
 
--- Adaptive save
-print("\n💾 SAVING OUTPUT...\n")
-local methods = adaptiveSave(output)
+RunService.RenderStepped:Connect(function(dt)
+	if camLockTarget and camera and hrp and humanoid then
+		camera.CameraType = Enum.CameraType.Scriptable
+		
+		local targetHRP = camLockTarget:FindFirstChild("HumanoidRootPart")
+		local targetHum = camLockTarget:FindFirstChildWhichIsA("Humanoid")
+		
+		if targetHRP and targetHum and targetHum.Health > 0 then
+			-- Calculate ideal camera position
+			local playerPos = hrp.Position + Vector3.new(0, CAMERA_HEIGHT, 0)
+			local directionToTarget = (targetHRP.Position - playerPos).Unit
+			local idealCameraPos = playerPos - (directionToTarget * CAMERA_DISTANCE)
+			local idealCamCFrame = CFrame.new(idealCameraPos, targetHRP.Position)
+			
+			-- Check if current camera is too far from ideal (external manipulation detection)
+			local currentDist = (camera.CFrame.Position - idealCameraPos).Magnitude
+			
+			if currentDist > MAX_CAMERA_OFFSET then
+				-- Camera was forcefully moved (explosion, cutscene, etc.)
+				-- SNAP back instead of lerping to prevent flying away
+				camera.CFrame = idealCamCFrame
+				lastValidCamCFrame = idealCamCFrame
+			else
+				-- Normal operation: adaptive lerp based on distance
+				-- Closer to ideal = slower lerp (smooth)
+				-- Further from ideal = faster lerp (correction)
+				local adaptiveLerpSpeed = math.clamp(currentDist / MAX_CAMERA_OFFSET, 0.15, 0.5)
+				
+				-- Additional frame-rate independent smoothing
+				local frameLerp = 1 - math.exp(-adaptiveLerpSpeed * 60 * dt)
+				
+				camera.CFrame = camera.CFrame:Lerp(idealCamCFrame, frameLerp)
+				lastValidCamCFrame = camera.CFrame
+			end
+		else
+			unlockCam()
+		end
+	end
+	
+	-- Force restore when not locked
+	if not camLockTarget and camera.CameraType == Enum.CameraType.Scriptable then
+		camera.CameraType = Enum.CameraType.Custom
+		camera.CameraSubject = humanoid
+	end
+end)
 
-for _, method in ipairs(methods) do
-    print(method)
-end
-
--- Print to console
-print("\n" .. "═".rep(70))
-print("FULL OUTPUT BELOW (scroll to view all)")
-print("═".rep(70) .. "\n")
-print(output)
-
-print("\n\n" .. "═".rep(70))
-print("🎉 DUMPER COMPLETE!")
-print("📦 GitHub: " .. GITHUB_REPO)
-print("═".rep(70))
-
-return GameData
+print("Mobile Lock System [FIXED] loaded!")
+print("✅ CHAR LOCK: Now uses BodyGyro (no more teleporting/death)")
+print("✅ CAM LOCK: Enhanced stability with snap-back protection")
+print("Drag buttons to reposition | Green dot = system active")
