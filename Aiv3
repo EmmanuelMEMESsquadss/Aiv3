@@ -247,13 +247,7 @@ local function unlockCam()
 	camLockBtn.Text = "CAM LOCK"
 	camLockBtn.BackgroundColor3 = Color3.fromRGB(206, 137, 36)
 	if not charLockTarget then detachBillboard() end
-	-- Restore camera to normal
-	if camera then
-		camera.CameraType = Enum.CameraType.Custom
-		if humanoid then
-			camera.CameraSubject = humanoid
-		end
-	end
+	-- Camera automatically returns to normal (we never forced Scriptable)
 end
 
 -- Character Lock Button
@@ -379,60 +373,70 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================
--- FIX #2: Camera Lock (ENHANCED STABILITY)
+-- FIX #2: Camera Lock (SHIFTLOCK COMPATIBLE)
 -- ============================================
-local CAMERA_DISTANCE = 15
-local CAMERA_HEIGHT = 3
-local MAX_CAMERA_OFFSET = 50 -- Maximum allowed distance from ideal position
-local lastValidCamCFrame -- Fallback position
+-- Works WITH Shiftlock instead of overriding it
+-- Smoothly aims camera at target while respecting player camera control
+
+local CAMERA_INFLUENCE = 0.25 -- How much we influence the camera (0.0 = none, 1.0 = full control)
+local SNAP_THRESHOLD = 80 -- If camera displaced beyond this, snap back
+local SMOOTH_SPEED = 0.18 -- Base smoothing speed
+local lastTargetPosition = nil
 
 RunService.RenderStepped:Connect(function(dt)
 	if camLockTarget and camera and hrp and humanoid then
-		camera.CameraType = Enum.CameraType.Scriptable
+		-- DON'T force Scriptable - let Shiftlock work naturally
 		
 		local targetHRP = camLockTarget:FindFirstChild("HumanoidRootPart")
 		local targetHum = camLockTarget:FindFirstChildWhichIsA("Humanoid")
 		
 		if targetHRP and targetHum and targetHum.Health > 0 then
-			-- Calculate ideal camera position
-			local playerPos = hrp.Position + Vector3.new(0, CAMERA_HEIGHT, 0)
-			local directionToTarget = (targetHRP.Position - playerPos).Unit
-			local idealCameraPos = playerPos - (directionToTarget * CAMERA_DISTANCE)
-			local idealCamCFrame = CFrame.new(idealCameraPos, targetHRP.Position)
+			-- Store last known position for prediction
+			lastTargetPosition = targetHRP.Position
 			
-			-- Check if current camera is too far from ideal (external manipulation detection)
-			local currentDist = (camera.CFrame.Position - idealCameraPos).Magnitude
+			-- Get current camera position and direction
+			local currentCamCF = camera.CFrame
+			local currentLookVector = currentCamCF.LookVector
 			
-			if currentDist > MAX_CAMERA_OFFSET then
-				-- Camera was forcefully moved (explosion, cutscene, etc.)
-				-- SNAP back instead of lerping to prevent flying away
-				camera.CFrame = idealCamCFrame
-				lastValidCamCFrame = idealCamCFrame
+			-- Calculate desired look direction toward target
+			local desiredLookVector = (targetHRP.Position - currentCamCF.Position).Unit
+			
+			-- Check for extreme displacement (explosions, forced camera moves)
+			local playerToCam = (currentCamCF.Position - hrp.Position).Magnitude
+			
+			if playerToCam > SNAP_THRESHOLD then
+				-- Emergency snap back (camera flew too far)
+				-- Calculate safe position relative to player
+				local safeDistance = 15
+				local playerToTarget = (targetHRP.Position - hrp.Position).Unit
+				local safeCamPos = hrp.Position - (playerToTarget * safeDistance) + Vector3.new(0, 3, 0)
+				camera.CFrame = CFrame.new(safeCamPos, targetHRP.Position)
 			else
-				-- Normal operation: adaptive lerp based on distance
-				-- Closer to ideal = slower lerp (smooth)
-				-- Further from ideal = faster lerp (correction)
-				local adaptiveLerpSpeed = math.clamp(currentDist / MAX_CAMERA_OFFSET, 0.15, 0.5)
+				-- Normal operation: Blend current look direction with target direction
+				-- This creates smooth tracking while allowing player camera control
 				
-				-- Additional frame-rate independent smoothing
-				local frameLerp = 1 - math.exp(-adaptiveLerpSpeed * 60 * dt)
+				-- Slerp (spherical interpolation) for smooth rotation
+				-- Frame-rate independent
+				local alpha = 1 - math.exp(-SMOOTH_SPEED * 60 * dt)
+				local blendedLookVector = currentLookVector:Lerp(desiredLookVector, CAMERA_INFLUENCE * alpha)
 				
-				camera.CFrame = camera.CFrame:Lerp(idealCamCFrame, frameLerp)
-				lastValidCamCFrame = camera.CFrame
+				-- Apply the blended rotation to camera
+				-- Keep camera position, only adjust look direction
+				local targetCFrame = CFrame.new(currentCamCF.Position, currentCamCF.Position + blendedLookVector)
+				
+				-- Smoothly transition to target rotation
+				camera.CFrame = currentCamCF:Lerp(targetCFrame, alpha)
 			end
 		else
 			unlockCam()
+			lastTargetPosition = nil
 		end
-	end
-	
-	-- Force restore when not locked
-	if not camLockTarget and camera.CameraType == Enum.CameraType.Scriptable then
-		camera.CameraType = Enum.CameraType.Custom
-		camera.CameraSubject = humanoid
+	else
+		lastTargetPosition = nil
 	end
 end)
 
 print("Mobile Lock System [FIXED] loaded!")
-print("✅ CHAR LOCK: Now uses BodyGyro (no more teleporting/death)")
-print("✅ CAM LOCK: Enhanced stability with snap-back protection")
-print("Drag buttons to reposition | Green dot = system active")
+print("✅ CHAR LOCK: BodyGyro rotation (no teleporting/death)")
+print("✅ CAM LOCK: Shiftlock compatible (smooth blending)")
+print("Drag buttons to reposition | Green dot = active | Works WITH Shiftlock!")
