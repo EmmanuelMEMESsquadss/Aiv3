@@ -47,30 +47,38 @@ gui.Name = "SpeedCustomizerUI"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
--- Main Speed Container
+-- Main Speed Container (just a visual wrapper)
 local speedContainer = Instance.new("Frame")
 speedContainer.Size = UDim2.new(0, 140, 0, 120)
 speedContainer.Position = UDim2.new(0.85, -140, 0.5, -60)
 speedContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
 speedContainer.BorderSizePixel = 0
-speedContainer.Active = true
+speedContainer.Active = false  -- Not interactive itself
 speedContainer.Parent = gui
 
 local containerCorner = Instance.new("UICorner")
 containerCorner.CornerRadius = UDim.new(0, 12)
 containerCorner.Parent = speedContainer
 
--- Title Label
+-- Drag Handle Area (ONLY for dragging)
+local dragHandle = Instance.new("Frame")
+dragHandle.Size = UDim2.new(1, 0, 0, 33)
+dragHandle.Position = UDim2.new(0, 0, 0, 0)
+dragHandle.BackgroundTransparency = 1  -- Invisible, just for dragging
+dragHandle.Active = true  -- Can receive input
+dragHandle.Parent = speedContainer
+
+-- Title Label (inside drag handle)
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -20, 0, 25)
-titleLabel.Position = UDim2.new(0, 10, 0, 8)
+titleLabel.Size = UDim2.new(1, -20, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "SPEED"
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 16
 titleLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = speedContainer
+titleLabel.Parent = dragHandle
 
 -- Speed Input Box
 local speedInput = Instance.new("TextBox")
@@ -84,7 +92,7 @@ speedInput.TextColor3 = Color3.new(1, 1, 1)
 speedInput.PlaceholderText = "16"
 speedInput.Text = ""
 speedInput.ClearTextOnFocus = false
-speedInput.Active = false  -- Don't block input
+speedInput.TextXAlignment = Enum.TextXAlignment.Center
 speedInput.Parent = speedContainer
 
 local inputCorner = Instance.new("UICorner")
@@ -101,7 +109,6 @@ applyBtn.Font = Enum.Font.GothamBold
 applyBtn.TextSize = 14
 applyBtn.TextColor3 = Color3.new(1, 1, 1)
 applyBtn.Text = "APPLY"
-applyBtn.Active = false  -- Don't block input
 applyBtn.Parent = speedContainer
 
 local applyCorner = Instance.new("UICorner")
@@ -111,7 +118,7 @@ applyCorner.Parent = applyBtn
 -- Mode Indicator (shows if bypass is active)
 local modeIndicator = Instance.new("TextLabel")
 modeIndicator.Size = UDim2.new(0, 60, 0, 18)
-modeIndicator.Position = UDim2.new(1, -70, 0, 10)
+modeIndicator.Position = UDim2.new(1, -70, 0, 8)
 modeIndicator.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
 modeIndicator.BorderSizePixel = 0
 modeIndicator.Font = Enum.Font.GothamBold
@@ -124,17 +131,13 @@ local modeCorner = Instance.new("UICorner")
 modeCorner.CornerRadius = UDim.new(0, 4)
 modeCorner.Parent = modeIndicator
 
--- Make draggable (only from title area, not buttons)
-local dragging, dragInput, dragStart, startPos
+-- Make draggable from drag handle ONLY
+local dragging = false
+local dragStart
+local startPos
 
-local function isDraggableArea(input)
-	-- Only allow dragging from title area (top 30 pixels)
-	local relativePos = input.Position - speedContainer.AbsolutePosition
-	return relativePos.Y < 30
-end
-
-speedContainer.InputBegan:Connect(function(input)
-	if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and isDraggableArea(input) then
+dragHandle.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		dragging = true
 		dragStart = input.Position
 		startPos = speedContainer.Position
@@ -147,13 +150,17 @@ speedContainer.InputBegan:Connect(function(input)
 	end
 end)
 
-speedContainer.InputChanged:Connect(function(input)
-	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		local delta = input.Position - dragStart
-		speedContainer.Position = UDim2.new(
-			startPos.X.Scale, startPos.X.Offset + delta.X,
-			startPos.Y.Scale, startPos.Y.Offset + delta.Y
-		)
+dragHandle.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		if dragging then
+			local delta = input.Position - dragStart
+			speedContainer.Position = UDim2.new(
+				startPos.X.Scale, 
+				startPos.X.Offset + delta.X,
+				startPos.Y.Scale, 
+				startPos.Y.Offset + delta.Y
+			)
+		end
 	end
 end)
 
@@ -301,4 +308,4 @@ end)
 print("Mobile Speed Customizer loaded!")
 print("✅ Direct mode for most games")
 print("✅ Bypass mode for protected games")
-print("💡 Type speed value and click APPLY")
+print("💡 Drag from title bar | Type speed & click APPLY")
