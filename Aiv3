@@ -493,29 +493,19 @@ local function updateAdaptiveSettings()
 	if not isAdaptiveMode then return end
 	
 	-- Ping-based adjustment
-	-- Low ping (0-50ms): Aggressive tracking
-	-- Medium ping (50-150ms): Balanced
-	-- High ping (150-300ms): Smoother, more prediction
-	-- Very high ping (300+ms): Max smoothing to reduce jitter
-	
 	if currentPing < 50 then
-		-- Low latency: Can be aggressive
 		GYRO_POWER = 20000
 		GYRO_DAMPING = 250
 	elseif currentPing < 100 then
-		-- Good connection: Balanced
 		GYRO_POWER = 15000
 		GYRO_DAMPING = 300
 	elseif currentPing < 200 then
-		-- Moderate lag: Increase smoothing
 		GYRO_POWER = 12000
 		GYRO_DAMPING = 450
 	elseif currentPing < 300 then
-		-- High lag: Heavy smoothing to prevent jitter
 		GYRO_POWER = 9000
 		GYRO_DAMPING = 600
 	else
-		-- Extreme lag: Maximum smoothing
 		GYRO_POWER = 7000
 		GYRO_DAMPING = 800
 	end
@@ -562,29 +552,16 @@ RunService.Heartbeat:Connect(function()
 				bodyGyro.Parent = hrp
 			end
 			
-			-- Get target position (with optional prediction for adaptive mode)
-			local targetPos = targetHRP.Position
+			-- Calculate look direction (WORKING METHOD - DON'T CHANGE!)
+			local lookPos = Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z)
+			local lookCFrame = CFrame.new(hrp.Position, lookPos)
 			
-			if isAdaptiveMode and currentPing > 0 then
-				-- Predict target position based on velocity
-				local targetVelocity = targetHRP.AssemblyVelocity or targetHRP.Velocity or Vector3.zero
-				local predictionTime = currentPing / 1000
-				targetPos = targetHRP.Position + (targetVelocity * predictionTime * 0.5) -- 0.5 factor to not over-predict
-			end
+			-- Apply rotation
+			bodyGyro.CFrame = lookCFrame
 			
-			-- Calculate look direction (keep Y level to prevent tilting)
-			local lookPos = Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z)
-			local direction = (lookPos - hrp.Position).Unit
-			
-			-- Create target CFrame facing the target
-			local targetCFrame = CFrame.new(hrp.Position, hrp.Position + direction)
-			
-			-- Apply rotation to BodyGyro
-			bodyGyro.CFrame = targetCFrame
-			
-			-- Update settings every frame (important for adaptive mode)
-			bodyGyro.P = GYRO_POWER
-			bodyGyro.D = GYRO_DAMPING
+			-- Apply current profile settings
+			if bodyGyro.P ~= GYRO_POWER then bodyGyro.P = GYRO_POWER end
+			if bodyGyro.D ~= GYRO_DAMPING then bodyGyro.D = GYRO_DAMPING end
 		else
 			unlockChar()
 			if bodyGyro then
