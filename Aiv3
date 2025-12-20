@@ -84,6 +84,7 @@ speedInput.TextColor3 = Color3.new(1, 1, 1)
 speedInput.PlaceholderText = "16"
 speedInput.Text = ""
 speedInput.ClearTextOnFocus = false
+speedInput.Active = false  -- Don't block input
 speedInput.Parent = speedContainer
 
 local inputCorner = Instance.new("UICorner")
@@ -100,6 +101,7 @@ applyBtn.Font = Enum.Font.GothamBold
 applyBtn.TextSize = 14
 applyBtn.TextColor3 = Color3.new(1, 1, 1)
 applyBtn.Text = "APPLY"
+applyBtn.Active = false  -- Don't block input
 applyBtn.Parent = speedContainer
 
 local applyCorner = Instance.new("UICorner")
@@ -122,11 +124,17 @@ local modeCorner = Instance.new("UICorner")
 modeCorner.CornerRadius = UDim.new(0, 4)
 modeCorner.Parent = modeIndicator
 
--- Make draggable
+-- Make draggable (only from title area, not buttons)
 local dragging, dragInput, dragStart, startPos
 
+local function isDraggableArea(input)
+	-- Only allow dragging from title area (top 30 pixels)
+	local relativePos = input.Position - speedContainer.AbsolutePosition
+	return relativePos.Y < 30
+end
+
 speedContainer.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+	if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and isDraggableArea(input) then
 		dragging = true
 		dragStart = input.Position
 		startPos = speedContainer.Position
@@ -139,8 +147,8 @@ speedContainer.InputBegan:Connect(function(input)
 	end
 end)
 
-UserInputService.InputChanged:Connect(function(input)
-	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+speedContainer.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 		local delta = input.Position - dragStart
 		speedContainer.Position = UDim2.new(
 			startPos.X.Scale, startPos.X.Offset + delta.X,
