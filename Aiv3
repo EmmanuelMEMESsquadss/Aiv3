@@ -376,11 +376,12 @@ end)
 -- FIX #2: Camera Lock (SHIFTLOCK COMPATIBLE)
 -- ============================================
 -- Works WITH Shiftlock instead of overriding it
--- Smoothly aims camera at target while respecting player camera control
+-- God of War Ragnarok style: Over-shoulder camera with strong tracking
 
-local CAMERA_INFLUENCE = 0.25 -- How much we influence the camera (0.0 = none, 1.0 = full control)
+local CAMERA_INFLUENCE = 0.65 -- How much we influence the camera (0.0 = none, 1.0 = full control)
 local SNAP_THRESHOLD = 80 -- If camera displaced beyond this, snap back
-local SMOOTH_SPEED = 0.18 -- Base smoothing speed
+local SMOOTH_SPEED = 0.35 -- Base smoothing speed (increased for responsiveness)
+local GOW_OFFSET = Vector3.new(1.5, 2, 0) -- Over-shoulder offset (right, up, forward)
 local lastTargetPosition = nil
 
 RunService.RenderStepped:Connect(function(dt)
@@ -394,37 +395,47 @@ RunService.RenderStepped:Connect(function(dt)
 			-- Store last known position for prediction
 			lastTargetPosition = targetHRP.Position
 			
-			-- Get current camera position and direction
+			-- Get current camera CFrame
 			local currentCamCF = camera.CFrame
-			local currentLookVector = currentCamCF.LookVector
+			
+			-- Calculate God of War style camera position
+			-- Position camera to the right and higher, like over-shoulder view
+			local characterLookVector = hrp.CFrame.LookVector
+			local characterRightVector = hrp.CFrame.RightVector
+			local characterUpVector = hrp.CFrame.UpVector
+			
+			-- Ideal camera position (behind and to the right of player)
+			local idealCamPos = hrp.Position 
+				+ (characterRightVector * GOW_OFFSET.X)  -- Right offset
+				+ (characterUpVector * GOW_OFFSET.Y)     -- Height offset
+				- (characterLookVector * 6)              -- Behind player
 			
 			-- Calculate desired look direction toward target
-			local desiredLookVector = (targetHRP.Position - currentCamCF.Position).Unit
+			local desiredLookVector = (targetHRP.Position - idealCamPos).Unit
+			local currentLookVector = currentCamCF.LookVector
 			
 			-- Check for extreme displacement (explosions, forced camera moves)
 			local playerToCam = (currentCamCF.Position - hrp.Position).Magnitude
 			
 			if playerToCam > SNAP_THRESHOLD then
-				-- Emergency snap back (camera flew too far)
-				-- Calculate safe position relative to player
-				local safeDistance = 15
-				local playerToTarget = (targetHRP.Position - hrp.Position).Unit
-				local safeCamPos = hrp.Position - (playerToTarget * safeDistance) + Vector3.new(0, 3, 0)
-				camera.CFrame = CFrame.new(safeCamPos, targetHRP.Position)
+				-- Emergency snap back with GoW positioning
+				camera.CFrame = CFrame.new(idealCamPos, targetHRP.Position)
 			else
-				-- Normal operation: Blend current look direction with target direction
-				-- This creates smooth tracking while allowing player camera control
+				-- Normal operation: Strong tracking with smooth blending
 				
-				-- Slerp (spherical interpolation) for smooth rotation
-				-- Frame-rate independent
+				-- Frame-rate independent smoothing
 				local alpha = 1 - math.exp(-SMOOTH_SPEED * 60 * dt)
+				
+				-- Blend camera POSITION toward ideal (subtle, for over-shoulder feel)
+				local blendedPosition = currentCamCF.Position:Lerp(idealCamPos, CAMERA_INFLUENCE * 0.15 * alpha)
+				
+				-- Blend look direction toward target (strong, for tracking)
 				local blendedLookVector = currentLookVector:Lerp(desiredLookVector, CAMERA_INFLUENCE * alpha)
 				
-				-- Apply the blended rotation to camera
-				-- Keep camera position, only adjust look direction
-				local targetCFrame = CFrame.new(currentCamCF.Position, currentCamCF.Position + blendedLookVector)
+				-- Create final camera CFrame
+				local targetCFrame = CFrame.new(blendedPosition, blendedPosition + blendedLookVector)
 				
-				-- Smoothly transition to target rotation
+				-- Apply with additional smoothing
 				camera.CFrame = currentCamCF:Lerp(targetCFrame, alpha)
 			end
 		else
@@ -438,5 +449,5 @@ end)
 
 print("Mobile Lock System [FIXED] loaded!")
 print("✅ CHAR LOCK: BodyGyro rotation (no teleporting/death)")
-print("✅ CAM LOCK: Shiftlock compatible (smooth blending)")
+print("✅ CAM LOCK: God of War style over-shoulder (65% tracking strength)")
 print("Drag buttons to reposition | Green dot = active | Works WITH Shiftlock!")
