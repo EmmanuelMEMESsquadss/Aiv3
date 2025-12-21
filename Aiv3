@@ -1,9 +1,10 @@
 -- LocalScript (StarterPlayerScripts)
--- Mobile Speed Customizer with Multi-Bypass System
+-- Mobile Speed Customizer with Profile System
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 -- Only run on mobile
 if not UserInputService.TouchEnabled then
@@ -13,21 +14,14 @@ end
 local player = Players.LocalPlayer
 local character, humanoid, hrp
 
--- ============================================
--- VARIABLES
--- ============================================
 local DEFAULT_SPEED = 16
 local currentSpeed = DEFAULT_SPEED
 local isSpeedActive = false
-local bypassMode = false
-local bypassMethod = 2  -- 1=BodyVelocity, 2=CFrame, 3=Hybrid (Start with 2)
+local currentMethod = "direct"
 
+-- Bypass objects
 local bodyVelocity
-local debugLabel
 
--- ============================================
--- CHARACTER SETUP
--- ============================================
 local function setupCharacter(char)
 	character = char
 	humanoid = char:WaitForChild("Humanoid")
@@ -37,7 +31,7 @@ local function setupCharacter(char)
 		DEFAULT_SPEED = humanoid.WalkSpeed
 	end
 	
-	-- Clean up old objects
+	-- Clean up old bypass objects
 	if bodyVelocity then
 		bodyVelocity:Destroy()
 		bodyVelocity = nil
@@ -47,18 +41,16 @@ end
 if player.Character then setupCharacter(player.Character) end
 player.CharacterAdded:Connect(setupCharacter)
 
--- ============================================
--- GUI CREATION
--- ============================================
+-- GUI
 local gui = Instance.new("ScreenGui")
 gui.Name = "SpeedCustomizerUI"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
--- Main Container
+-- Main Speed Container
 local speedContainer = Instance.new("Frame")
-speedContainer.Size = UDim2.new(0, 140, 0, 135)
-speedContainer.Position = UDim2.new(0.85, -140, 0.5, -67)
+speedContainer.Size = UDim2.new(0, 140, 0, 120)
+speedContainer.Position = UDim2.new(0.85, -140, 0.5, -60)
 speedContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
 speedContainer.BorderSizePixel = 0
 speedContainer.Active = false
@@ -68,7 +60,7 @@ local containerCorner = Instance.new("UICorner")
 containerCorner.CornerRadius = UDim.new(0, 12)
 containerCorner.Parent = speedContainer
 
--- Drag Handle (top bar only)
+-- Drag Handle
 local dragHandle = Instance.new("Frame")
 dragHandle.Size = UDim2.new(1, 0, 0, 33)
 dragHandle.Position = UDim2.new(0, 0, 0, 0)
@@ -78,7 +70,7 @@ dragHandle.Parent = speedContainer
 
 -- Title Label
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -20, 1, 0)
+titleLabel.Size = UDim2.new(1, -50, 1, 0)
 titleLabel.Position = UDim2.new(0, 10, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "SPEED"
@@ -88,21 +80,135 @@ titleLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = dragHandle
 
--- Mode Indicator
-local modeIndicator = Instance.new("TextLabel")
-modeIndicator.Size = UDim2.new(0, 60, 0, 18)
-modeIndicator.Position = UDim2.new(1, -70, 0, 8)
-modeIndicator.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-modeIndicator.BorderSizePixel = 0
-modeIndicator.Font = Enum.Font.GothamBold
-modeIndicator.TextSize = 10
-modeIndicator.TextColor3 = Color3.fromRGB(255, 200, 100)
-modeIndicator.Text = "DIRECT"
-modeIndicator.Parent = speedContainer
+-- Method Selector Button (+ icon)
+local methodBtn = Instance.new("TextButton")
+methodBtn.Size = UDim2.new(0, 24, 0, 24)
+methodBtn.Position = UDim2.new(1, -28, 0, 4)
+methodBtn.Text = "+"
+methodBtn.BackgroundColor3 = Color3.fromRGB(46, 147, 216)
+methodBtn.TextColor3 = Color3.new(1, 1, 1)
+methodBtn.Font = Enum.Font.GothamBold
+methodBtn.TextSize = 18
+methodBtn.ZIndex = 10
+methodBtn.Parent = dragHandle
 
-local modeCorner = Instance.new("UICorner")
-modeCorner.CornerRadius = UDim.new(0, 4)
-modeCorner.Parent = modeIndicator
+local methodCorner = Instance.new("UICorner")
+methodCorner.CornerRadius = UDim.new(0.5, 0)
+methodCorner.Parent = methodBtn
+
+-- Method Menu Container
+local methodMenu = Instance.new("Frame")
+methodMenu.Size = UDim2.new(0, 150, 0, 0)
+methodMenu.Position = UDim2.new(1, 5, 0, 0)
+methodMenu.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+methodMenu.BorderSizePixel = 0
+methodMenu.ClipsDescendants = true
+methodMenu.Visible = false
+methodMenu.ZIndex = 5
+methodMenu.Parent = speedContainer
+
+local menuCorner = Instance.new("UICorner")
+menuCorner.CornerRadius = UDim.new(0, 8)
+menuCorner.Parent = methodMenu
+
+-- Method profiles
+local methods = {
+	{name = "DIRECT", desc = "WalkSpeed", id = "direct", color = Color3.fromRGB(80, 200, 120)},
+	{name = "VELOCITY", desc = "Physics", id = "velocity", color = Color3.fromRGB(255, 140, 60)},
+	{name = "CFRAME", desc = "Position", id = "cframe", color = Color3.fromRGB(255, 100, 100)},
+	{name = "HYBRID", desc = "Mixed", id = "hybrid", color = Color3.fromRGB(150, 100, 255)}
+}
+
+local methodButtons = {}
+
+for i, method in ipairs(methods) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -10, 0, 32)
+	btn.Position = UDim2.new(0, 5, 0, 5 + (i-1) * 37)
+	btn.BackgroundColor3 = method.color
+	btn.BackgroundTransparency = 0.2
+	btn.BorderSizePixel = 0
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 12
+	btn.TextColor3 = Color3.new(1, 1, 1)
+	btn.Text = method.name .. " · " .. method.desc
+	btn.ZIndex = 6
+	btn.Parent = methodMenu
+	
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 6)
+	btnCorner.Parent = btn
+	
+	-- Selection indicator
+	local indicator = Instance.new("Frame")
+	indicator.Size = UDim2.new(0, 3, 1, -6)
+	indicator.Position = UDim2.new(0, 3, 0, 3)
+	indicator.BackgroundColor3 = Color3.new(1, 1, 1)
+	indicator.BorderSizePixel = 0
+	indicator.Visible = (i == 1)
+	indicator.ZIndex = 7
+	indicator.Parent = btn
+	
+	local indCorner = Instance.new("UICorner")
+	indCorner.CornerRadius = UDim.new(1, 0)
+	indCorner.Parent = indicator
+	
+	methodButtons[i] = {button = btn, indicator = indicator, method = method}
+	
+	-- Method selection
+	btn.Activated:Connect(function()
+		currentMethod = method.id
+		
+		-- Update indicators
+		for j, data in ipairs(methodButtons) do
+			data.indicator.Visible = (j == i)
+			TweenService:Create(data.button, TweenInfo.new(0.2), {
+				BackgroundTransparency = (j == i) and 0.2 or 0.5
+			}):Play()
+		end
+		
+		-- Visual feedback
+		TweenService:Create(btn, TweenInfo.new(0.1), {
+			Size = UDim2.new(1, -8, 0, 32)
+		}):Play()
+		task.wait(0.1)
+		TweenService:Create(btn, TweenInfo.new(0.1), {
+			Size = UDim2.new(1, -10, 0, 32)
+		}):Play()
+		
+		-- If speed is active, reapply with new method
+		if isSpeedActive then
+			applySpeed(currentSpeed)
+		end
+	end)
+end
+
+-- Method menu toggle
+local menuOpen = false
+methodBtn.Activated:Connect(function()
+	menuOpen = not menuOpen
+	
+	if menuOpen then
+		methodMenu.Visible = true
+		TweenService:Create(methodMenu, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Size = UDim2.new(0, 150, 0, 155)
+		}):Play()
+		TweenService:Create(methodBtn, TweenInfo.new(0.2), {
+			Rotation = 45,
+			BackgroundColor3 = Color3.fromRGB(206, 36, 36)
+		}):Play()
+	else
+		TweenService:Create(methodMenu, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+			Size = UDim2.new(0, 150, 0, 0)
+		}):Play()
+		TweenService:Create(methodBtn, TweenInfo.new(0.2), {
+			Rotation = 0,
+			BackgroundColor3 = Color3.fromRGB(46, 147, 216)
+		}):Play()
+		task.wait(0.2)
+		methodMenu.Visible = false
+	end
+end)
 
 -- Speed Input Box
 local speedInput = Instance.new("TextBox")
@@ -113,7 +219,7 @@ speedInput.BorderSizePixel = 0
 speedInput.Font = Enum.Font.GothamBold
 speedInput.TextSize = 20
 speedInput.TextColor3 = Color3.new(1, 1, 1)
-speedInput.PlaceholderText = "16"
+speedInput.PlaceholderText = tostring(DEFAULT_SPEED)
 speedInput.Text = ""
 speedInput.ClearTextOnFocus = false
 speedInput.TextXAlignment = Enum.TextXAlignment.Center
@@ -139,24 +245,9 @@ local applyCorner = Instance.new("UICorner")
 applyCorner.CornerRadius = UDim.new(0, 8)
 applyCorner.Parent = applyBtn
 
--- Debug Label
-debugLabel = Instance.new("TextLabel")
-debugLabel.Size = UDim2.new(1, -20, 0, 15)
-debugLabel.Position = UDim2.new(0, 10, 1, -20)
-debugLabel.BackgroundTransparency = 1
-debugLabel.Font = Enum.Font.Code
-debugLabel.TextSize = 10
-debugLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-debugLabel.Text = "Ready"
-debugLabel.TextXAlignment = Enum.TextXAlignment.Left
-debugLabel.Parent = speedContainer
-
--- ============================================
--- DRAGGING SYSTEM
--- ============================================
+-- Dragging
 local dragging = false
-local dragStart
-local startPos
+local dragStart, startPos
 
 dragHandle.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -177,68 +268,43 @@ dragHandle.InputChanged:Connect(function(input)
 		if dragging then
 			local delta = input.Position - dragStart
 			speedContainer.Position = UDim2.new(
-				startPos.X.Scale, 
-				startPos.X.Offset + delta.X,
-				startPos.Y.Scale, 
-				startPos.Y.Offset + delta.Y
+				startPos.X.Scale, startPos.X.Offset + delta.X,
+				startPos.Y.Scale, startPos.Y.Offset + delta.Y
 			)
 		end
 	end
 end)
 
--- ============================================
--- SPEED FUNCTIONS
--- ============================================
-local function applyDirectSpeed(speed)
-	if humanoid then
+-- Speed application function
+function applySpeed(speed)
+	if not humanoid or not hrp then return end
+	
+	currentSpeed = speed
+	
+	-- Clean up old bypass
+	if bodyVelocity then
+		bodyVelocity:Destroy()
+		bodyVelocity = nil
+	end
+	
+	if currentMethod == "direct" then
+		-- DIRECT: Just set WalkSpeed
 		humanoid.WalkSpeed = speed
-		return true
-	end
-	return false
-end
-
-local function checkIfSpeedLocked()
-	if not humanoid then return false end
-	
-	local testSpeed = humanoid.WalkSpeed + 1
-	humanoid.WalkSpeed = testSpeed
-	task.wait(0.1)
-	
-	if math.abs(humanoid.WalkSpeed - testSpeed) > 0.5 then
-		humanoid.WalkSpeed = DEFAULT_SPEED
-		return true
-	else
-		humanoid.WalkSpeed = DEFAULT_SPEED
-		return false
-	end
-end
-
-local function applyBypassSpeed(speed)
-	if not humanoid or not hrp then return false end
-	
-	bypassMode = true
-	modeIndicator.Text = "BYPASS"
-	modeIndicator.TextColor3 = Color3.fromRGB(255, 100, 100)
-	
-	-- Create BodyVelocity (used by Methods 1 and 3)
-	if not bodyVelocity or bodyVelocity.Parent ~= hrp then
+		
+	elseif currentMethod == "velocity" then
+		-- VELOCITY: Use BodyVelocity
 		bodyVelocity = Instance.new("BodyVelocity")
 		bodyVelocity.MaxForce = Vector3.new(100000, 0, 100000)
 		bodyVelocity.Velocity = Vector3.zero
 		bodyVelocity.Parent = hrp
 	end
 	
-	debugLabel.Text = "Bypass active - Method " .. bypassMethod
-	
-	return true
+	-- Methods "cframe" and "hybrid" are applied in RunService loop
 end
 
--- ============================================
--- APPLY BUTTON
--- ============================================
+-- Apply button
 applyBtn.Activated:Connect(function()
-	local inputText = speedInput.Text
-	local speed = tonumber(inputText)
+	local speed = tonumber(speedInput.Text)
 	
 	if not speed then
 		applyBtn.Text = "INVALID!"
@@ -250,172 +316,57 @@ applyBtn.Activated:Connect(function()
 	end
 	
 	speed = math.clamp(speed, 0, 500)
-	currentSpeed = speed
-	
-	-- Try direct method
-	applyDirectSpeed(speed)
-	task.wait(0.3)
-	local isLocked = checkIfSpeedLocked()
-	
-	if isLocked then
-		-- Use bypass
-		warn("[Speed Customizer] Direct blocked - Using Bypass Method " .. bypassMethod)
-		applyBypassSpeed(speed)
-		
-		applyBtn.Text = "BYP M" .. bypassMethod
-		applyBtn.BackgroundColor3 = Color3.fromRGB(255, 140, 60)
-		modeIndicator.Text = "BYP-" .. bypassMethod
-		debugLabel.Text = "Testing bypass..."
-	else
-		-- Direct worked
-		bypassMode = false
-		modeIndicator.Text = "DIRECT"
-		modeIndicator.TextColor3 = Color3.fromRGB(100, 255, 100)
-		applyBtn.Text = "APPLIED"
-		applyBtn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
-		debugLabel.Text = "Direct mode OK"
-	end
-	
+	applySpeed(speed)
 	isSpeedActive = true
 	
-	task.wait(2)
-	if isSpeedActive then
-		applyBtn.Text = bypassMode and ("BYP M" .. bypassMethod) or "ACTIVE"
-	end
+	applyBtn.Text = "ACTIVE"
+	applyBtn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
 end)
 
--- ============================================
--- METHOD SWITCHER (Click mode indicator)
--- ============================================
-modeIndicator.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		if bypassMode then
-			bypassMethod = (bypassMethod % 3) + 1
-			modeIndicator.Text = "BYP-" .. bypassMethod
-			applyBtn.Text = "M" .. bypassMethod
-			
-			warn("[Speed Customizer] Switched to Method " .. bypassMethod)
-			
-			local methodNames = {"BodyVelocity", "CFrame", "Hybrid"}
-			debugLabel.Text = "Method " .. bypassMethod .. ": " .. methodNames[bypassMethod]
-		end
-	end
-end)
-
--- ============================================
--- BYPASS LOOP (Heartbeat)
--- ============================================
+-- Speed boost loop
 RunService.Heartbeat:Connect(function(dt)
-	-- Exit early if not active
-	if not bypassMode or not isSpeedActive then
-		if debugLabel then debugLabel.Text = "Inactive" end
-		return
-	end
+	if not isSpeedActive or not humanoid or not hrp then return end
 	
-	if not humanoid or not hrp then
-		if debugLabel then debugLabel.Text = "No character" end
-		return
-	end
+	-- Get movement direction (works in ALL Roblox versions)
+	local moveDir = humanoid.MoveDirection
 	
-	-- Check state
-	local state = humanoid:GetState()
-	if state == Enum.HumanoidStateType.Dead or 
-	   state == Enum.HumanoidStateType.Physics or
-	   state == Enum.HumanoidStateType.Swimming then
-		if debugLabel then debugLabel.Text = "Bad state: " .. tostring(state) end
-		return
-	end
-	
-	-- Get movement
-	local moveVector = humanoid.MoveVector
-	local isMoving = moveVector.Magnitude > 0.05
-	
-	-- Update debug
-	if debugLabel then
-		debugLabel.Text = string.format("M%d Moving:%s Spd:%.0f", bypassMethod, tostring(isMoving), currentSpeed)
-	end
-	
-	if not isMoving then
-		if bodyVelocity and bodyVelocity.Parent then
-			bodyVelocity.Velocity = Vector3.zero
-		end
-		return
-	end
-	
-	-- Apply bypass based on method
-	local speedMultiplier = currentSpeed / DEFAULT_SPEED
-	local moveDirection = moveVector.Unit
-	
-	-- METHOD 1: BodyVelocity
-	if bypassMethod == 1 then
-		if bodyVelocity and bodyVelocity.Parent then
-			local targetSpeed = currentSpeed
-			local currentY = hrp.AssemblyLinearVelocity.Y
-			bodyVelocity.Velocity = Vector3.new(
-				moveDirection.X * targetSpeed,
-				currentY,
-				moveDirection.Z * targetSpeed
-			)
-		end
-	end
-	
-	-- METHOD 2: CFrame Manipulation
-	if bypassMethod == 2 then
-		local normalMove = DEFAULT_SPEED * dt
-		local wantedMove = currentSpeed * dt
-		local extraMove = wantedMove - normalMove
+	if moveDir.Magnitude > 0.1 then
+		local speedMultiplier = currentSpeed / DEFAULT_SPEED
 		
-		if extraMove > 0 then
-			local newPos = hrp.Position + (moveDirection * extraMove)
-			hrp.CFrame = CFrame.new(newPos) * (hrp.CFrame - hrp.CFrame.Position)
-		end
-	end
-	
-	-- METHOD 3: Hybrid
-	if bypassMethod == 3 then
-		-- CFrame nudge
-		local nudgeAmount = (currentSpeed - DEFAULT_SPEED) * dt * 0.4
-		if nudgeAmount > 0 then
-			local newPos = hrp.Position + (moveDirection * nudgeAmount)
-			hrp.CFrame = CFrame.new(newPos) * (hrp.CFrame - hrp.CFrame.Position)
-		end
-		
-		-- Velocity boost
-		if bodyVelocity and bodyVelocity.Parent then
-			local boostSpeed = currentSpeed * 0.6
-			local currentY = hrp.AssemblyLinearVelocity.Y
-			bodyVelocity.Velocity = Vector3.new(
-				moveDirection.X * boostSpeed,
-				currentY,
-				moveDirection.Z * boostSpeed
-			)
-		end
-	end
-end)
-
--- ============================================
--- ANTI-RESET MONITOR
--- ============================================
-spawn(function()
-	while true do
-		task.wait(0.5)
-		
-		if isSpeedActive and not bypassMode and humanoid then
-			if math.abs(humanoid.WalkSpeed - currentSpeed) > 2 then
+		if currentMethod == "direct" then
+			-- Continuously reapply in case game resets it
+			if humanoid.WalkSpeed ~= currentSpeed then
 				humanoid.WalkSpeed = currentSpeed
 			end
+			
+		elseif currentMethod == "velocity" and bodyVelocity then
+			-- Apply velocity in movement direction
+			local targetVelocity = moveDir * currentSpeed
+			local currentVelocity = hrp.AssemblyLinearVelocity or hrp.Velocity
+			bodyVelocity.Velocity = Vector3.new(targetVelocity.X, currentVelocity.Y, targetVelocity.Z)
+			
+		elseif currentMethod == "cframe" then
+			-- CFrame manipulation (direct position change)
+			local extraSpeed = currentSpeed - DEFAULT_SPEED
+			local moveAmount = moveDir * extraSpeed * dt
+			hrp.CFrame = hrp.CFrame + moveAmount
+			
+		elseif currentMethod == "hybrid" then
+			-- Hybrid: Small CFrame + try to set WalkSpeed
+			humanoid.WalkSpeed = currentSpeed
+			local extraSpeed = (currentSpeed - DEFAULT_SPEED) * 0.3
+			local moveAmount = moveDir * extraSpeed * dt
+			hrp.CFrame = hrp.CFrame + moveAmount
+		end
+	else
+		-- Not moving
+		if bodyVelocity then
+			bodyVelocity.Velocity = Vector3.zero
 		end
 	end
 end)
 
--- ============================================
--- LOADED MESSAGE
--- ============================================
-print("Mobile Speed Customizer [DEBUG MODE] loaded!")
-print("✅ Direct mode: Works in most games")
-print("✅ Bypass Method 1: BodyVelocity")
-print("✅ Bypass Method 2: CFrame (DEFAULT)")
-print("✅ Bypass Method 3: Hybrid")
-print("💡 Type speed & click APPLY")
-print("🔧 Click mode indicator to switch methods")
-print("📊 Debug label shows status")
+print("Mobile Speed Customizer [PROFILE SYSTEM] loaded!")
+print("✅ 4 Methods: DIRECT/VELOCITY/CFRAME/HYBRID")
+print("💡 Click [+] to switch methods")
+print("🎮 Drag from title | Type speed & APPLY")
