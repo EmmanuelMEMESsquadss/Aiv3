@@ -47,6 +47,36 @@ gui.Name = "SpeedCustomizerUI"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
+-- Minimized Button (shows when UI is minimized)
+local miniBtn = Instance.new("TextButton")
+miniBtn.Size = UDim2.new(0, 50, 0, 50)
+miniBtn.Position = UDim2.new(0.85, -50, 0.5, -25)
+miniBtn.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+miniBtn.BorderSizePixel = 0
+miniBtn.Font = Enum.Font.GothamBold
+miniBtn.TextSize = 20
+miniBtn.TextColor3 = Color3.new(1, 1, 1)
+miniBtn.Text = "+"
+miniBtn.Visible = false
+miniBtn.ZIndex = 10
+miniBtn.Active = true
+miniBtn.Parent = gui
+
+local miniBtnCorner = Instance.new("UICorner")
+miniBtnCorner.CornerRadius = UDim.new(0.5, 0)
+miniBtnCorner.Parent = miniBtn
+
+-- Mini button label
+local miniLabel = Instance.new("TextLabel")
+miniLabel.Size = UDim2.new(1, 0, 0, 15)
+miniLabel.Position = UDim2.new(0, 0, 1, 2)
+miniLabel.BackgroundTransparency = 1
+miniLabel.Text = "SPEED"
+miniLabel.Font = Enum.Font.GothamBold
+miniLabel.TextSize = 10
+miniLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+miniLabel.Parent = miniBtn
+
 -- Main Speed Container
 local speedContainer = Instance.new("Frame")
 speedContainer.Size = UDim2.new(0, 140, 0, 120)
@@ -70,7 +100,7 @@ dragHandle.Parent = speedContainer
 
 -- Title Label
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -50, 1, 0)
+titleLabel.Size = UDim2.new(1, -75, 1, 0)
 titleLabel.Position = UDim2.new(0, 10, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "SPEED"
@@ -79,6 +109,22 @@ titleLabel.TextSize = 16
 titleLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = dragHandle
+
+-- Minimize Button (- icon)
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 20, 0, 20)
+minimizeBtn.Position = UDim2.new(1, -50, 0, 6)
+minimizeBtn.Text = "-"
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 100)
+minimizeBtn.TextColor3 = Color3.new(1, 1, 1)
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 20
+minimizeBtn.ZIndex = 10
+minimizeBtn.Parent = dragHandle
+
+local minimizeCorner = Instance.new("UICorner")
+minimizeCorner.CornerRadius = UDim.new(0.5, 0)
+minimizeCorner.Parent = minimizeBtn
 
 -- Method Selector Button (+ icon)
 local methodBtn = Instance.new("TextButton")
@@ -245,7 +291,7 @@ local applyCorner = Instance.new("UICorner")
 applyCorner.CornerRadius = UDim.new(0, 8)
 applyCorner.Parent = applyBtn
 
--- Dragging
+-- Dragging for main container
 local dragging = false
 local dragStart, startPos
 
@@ -272,6 +318,80 @@ dragHandle.InputChanged:Connect(function(input)
 				startPos.Y.Scale, startPos.Y.Offset + delta.Y
 			)
 		end
+	end
+end)
+
+-- Dragging for mini button
+local miniDragging = false
+local miniDragStart, miniStartPos
+
+miniBtn.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		miniDragging = true
+		miniDragStart = input.Position
+		miniStartPos = miniBtn.Position
+		
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				miniDragging = false
+			end
+		end)
+	end
+end)
+
+miniBtn.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		if miniDragging then
+			local delta = input.Position - miniDragStart
+			miniBtn.Position = UDim2.new(
+				miniStartPos.X.Scale, miniStartPos.X.Offset + delta.X,
+				miniStartPos.Y.Scale, miniStartPos.Y.Offset + delta.Y
+			)
+		end
+	end
+end)
+
+-- Minimize/Maximize functionality
+local isMinimized = false
+
+minimizeBtn.Activated:Connect(function()
+	isMinimized = true
+	
+	-- Smooth minimize animation
+	TweenService:Create(speedContainer, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+		Size = UDim2.new(0, 0, 0, 0)
+	}):Play()
+	
+	task.wait(0.3)
+	speedContainer.Visible = false
+	miniBtn.Visible = true
+	
+	-- Pop in animation for mini button
+	miniBtn.Size = UDim2.new(0, 0, 0, 0)
+	TweenService:Create(miniBtn, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Size = UDim2.new(0, 50, 0, 50)
+	}):Play()
+end)
+
+miniBtn.Activated:Connect(function()
+	-- Only maximize if not dragging
+	if not miniDragging then
+		isMinimized = false
+		
+		-- Hide mini button
+		TweenService:Create(miniBtn, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+			Size = UDim2.new(0, 0, 0, 0)
+		}):Play()
+		
+		task.wait(0.2)
+		miniBtn.Visible = false
+		speedContainer.Visible = true
+		
+		-- Expand main container
+		speedContainer.Size = UDim2.new(0, 0, 0, 0)
+		TweenService:Create(speedContainer, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Size = UDim2.new(0, 140, 0, 120)
+		}):Play()
 	end
 end)
 
@@ -368,5 +488,5 @@ end)
 
 print("Mobile Speed Customizer [PROFILE SYSTEM] loaded!")
 print("✅ 4 Methods: DIRECT/VELOCITY/CFRAME/HYBRID")
-print("💡 Click [+] to switch methods")
-print("🎮 Drag from title | Type speed & APPLY")
+print("💡 Click [+] to switch methods | [-] to minimize")
+print("🎮 Drag from title | Mini button is draggable too!")
